@@ -1,0 +1,599 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<title>Sub Test Bench</title>
+<style>
+  :root{
+    --bg: #0a0a0c;
+    --panel: #131316;
+    --panel-2: #1a1a1e;
+    --line: #2a2a30;
+    --text: #ececea;
+    --dim: #86868f;
+    --sub-yellow: #ffcf4d;
+    --accent: #5fc7bd;
+    --accent-dim: #3a7d76;
+    --err: #ff6b6b;
+    --mono: ui-monospace, 'SF Mono', 'JetBrains Mono', Menlo, Consolas, monospace;
+    --sans: -apple-system, 'Segoe UI', Inter, sans-serif;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0; padding:0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--sans);
+    min-height:100vh;
+  }
+  .wrap{max-width:1200px; margin:0 auto; padding:28px 20px 60px;}
+
+  .header{
+    display:flex; align-items:baseline; justify-content:space-between;
+    border-bottom:1px solid var(--line); padding-bottom:16px; margin-bottom:24px;
+    flex-wrap:wrap; gap:8px;
+  }
+  .header h1{
+    font-family: var(--mono); font-size:20px; font-weight:600; margin:0;
+    letter-spacing:0.5px;
+  }
+  .header h1 span{color:var(--sub-yellow);}
+  .header .tag{font-family:var(--mono); font-size:11px; color:var(--dim); letter-spacing:1px;}
+
+  .panel{
+    background: var(--panel);
+    border:1px solid var(--line);
+    border-radius:10px;
+    padding:18px 20px;
+    margin-bottom:18px;
+  }
+  .panel-title{
+    font-family:var(--mono); font-size:11px; color:var(--dim);
+    letter-spacing:1.5px; text-transform:uppercase; margin-bottom:12px;
+    display:flex; justify-content:space-between; align-items:center;
+  }
+
+  label{display:block; font-size:12px; color:var(--dim); margin-bottom:6px; font-family:var(--mono);}
+  input[type=text], input[type=password], textarea, select{
+    width:100%; background:var(--panel-2); border:1px solid var(--line);
+    color:var(--text); border-radius:6px; padding:10px 12px;
+    font-family:var(--mono); font-size:13px; resize:vertical;
+  }
+  input[type=text]:focus, input[type=password]:focus, textarea:focus{
+    outline:none; border-color:var(--accent);
+  }
+  .row{display:flex; gap:14px; flex-wrap:wrap;}
+  .row > div{flex:1; min-width:200px;}
+  .hint{font-size:11px; color:var(--dim); margin-top:6px; line-height:1.5;}
+  .warn{font-size:11px; color:var(--sub-yellow); margin-top:6px; line-height:1.5;}
+
+  /* selected model chips */
+  .selected-chips{display:flex; gap:8px; flex-wrap:wrap; margin-bottom:12px; min-height:34px;}
+  .sel-chip{
+    display:flex; align-items:center; gap:8px;
+    background:rgba(95,199,189,0.1); border:1px solid var(--accent-dim); border-radius:20px;
+    padding:6px 8px 6px 14px; font-family:var(--mono); font-size:12px; color:var(--text);
+  }
+  .sel-chip button{
+    background:transparent; border:none; color:var(--dim); font-size:14px;
+    padding:0 6px; cursor:pointer; line-height:1; border-radius:50%;
+  }
+  .sel-chip button:hover{color:var(--err);}
+  .sel-chip .price{color:var(--dim); font-size:10px;}
+  .empty-note{font-family:var(--mono); font-size:12px; color:var(--dim); padding:6px 0;}
+
+  /* model picker */
+  .picker{position:relative;}
+  .picker-results{
+    margin-top:8px; max-height:280px; overflow-y:auto;
+    border:1px solid var(--line); border-radius:8px; background:var(--panel-2);
+  }
+  .picker-row{
+    display:flex; justify-content:space-between; align-items:center;
+    padding:9px 14px; border-bottom:1px solid var(--line);
+    cursor:pointer; font-family:var(--mono); font-size:12px;
+  }
+  .picker-row:last-child{border-bottom:none;}
+  .picker-row:hover{background:rgba(95,199,189,0.06);}
+  .picker-row.added{opacity:0.4; cursor:default;}
+  .picker-row .id{color:var(--text);}
+  .picker-row .price{color:var(--dim); font-size:10px; white-space:nowrap; margin-left:12px;}
+  .picker-loading, .picker-empty{padding:14px; font-family:var(--mono); font-size:12px; color:var(--dim);}
+
+  .models-count{font-family:var(--mono); font-size:10px; color:var(--dim); font-weight:normal; text-transform:none; letter-spacing:0;}
+
+  button{
+    background: var(--sub-yellow); color:#1a1400; border:none;
+    font-family:var(--mono); font-weight:700; font-size:13px;
+    padding:12px 22px; border-radius:6px; cursor:pointer;
+    letter-spacing:0.5px;
+  }
+  button:hover{filter:brightness(1.08);}
+  button:disabled{background:var(--line); color:var(--dim); cursor:not-allowed;}
+  button.secondary{
+    background:transparent; color:var(--accent); border:1px solid var(--accent-dim);
+    font-weight:600; padding:10px 16px;
+  }
+
+  .status{font-family:var(--mono); font-size:12px; color:var(--dim); margin-top:10px; min-height:16px;}
+  .status.err{color:var(--err);}
+
+  .screen{
+    background:#000; border-radius:10px; border:1px solid var(--line);
+    padding:0; overflow-x:auto; margin-top:6px;
+  }
+  .screen-head{
+    display:flex; justify-content:space-between; align-items:center;
+    padding:10px 16px; border-bottom:1px solid var(--line); background:var(--panel);
+    font-family:var(--mono); font-size:11px; color:var(--dim);
+  }
+  .model-col-heads{display:flex; min-width:max-content;}
+  .model-col-head{width:220px; flex-shrink:0; text-align:center; padding:12px; font-family:var(--mono); font-size:12px; color:var(--accent); border-left:1px solid var(--line);}
+  .model-col-head .cost{display:block; color:var(--dim); font-size:10px; margin-top:3px;}
+
+  .cue{
+    display:flex; border-bottom:1px solid #161618;
+    min-height:64px; min-width:max-content;
+  }
+  .cue:last-child{border-bottom:none;}
+  .cue-num{
+    width:64px; flex-shrink:0; display:flex; align-items:center; justify-content:center;
+    font-family:var(--mono); font-size:11px; color:var(--dim); background:#0d0d0f;
+    border-right:1px solid var(--line);
+  }
+  .cue-src{
+    width:220px; flex-shrink:0; display:flex; align-items:center;
+    padding:10px 14px; font-size:13px; color:var(--text); background:#0d0d0f;
+    border-right:1px solid var(--line); line-height:1.4;
+  }
+  .cue-col{
+    width:220px; flex-shrink:0; display:flex; align-items:center; justify-content:center;
+    padding:10px 16px; border-left:1px solid #161618;
+  }
+  .cap{
+    color: var(--sub-yellow);
+    font-size:14px; line-height:1.45; text-align:center;
+    font-family:var(--sans);
+    text-shadow: 0 1px 3px rgba(0,0,0,0.6);
+  }
+  .cap.pending{color:var(--dim); font-style:italic; font-size:12px;}
+  .cap.error{color:var(--err); font-size:11px; font-family:var(--mono);}
+
+  .summary{
+    display:flex; gap:16px; flex-wrap:wrap; margin-top:18px;
+  }
+  .sum-card{
+    flex:1; min-width:200px; background:var(--panel); border:1px solid var(--line);
+    border-radius:10px; padding:16px 18px;
+  }
+  .sum-card h3{font-family:var(--mono); font-size:12px; color:var(--accent); margin:0 0 10px; letter-spacing:0.5px;}
+  .sum-line{display:flex; justify-content:space-between; font-size:12px; color:var(--dim); margin-bottom:6px; font-family:var(--mono);}
+  .sum-line b{color:var(--text); font-weight:600;}
+  .sum-line .ep{color:var(--sub-yellow);}
+
+  ::placeholder{color:#54545c;}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="header">
+    <h1>SUB<span>TEST</span>_BENCH</h1>
+    <div class="tag">// сравнение любых моделей OpenRouter вживую</div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-title">Ключ OpenRouter</div>
+    <input type="password" id="apiKey" placeholder="sk-or-v1-..." autocomplete="off">
+    <div class="hint">Ключ используется только в этой вкладке для прямых запросов к openrouter.ai из браузера и нигде не сохраняется — при обновлении страницы его нужно будет ввести заново.</div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-title">
+      <span>Модели для сравнения</span>
+      <span class="models-count" id="selCount"></span>
+    </div>
+    <div class="selected-chips" id="selectedChips"></div>
+
+    <div class="picker">
+      <input type="text" id="modelSearch" placeholder="Поиск по каталогу OpenRouter — mistral, deepseek, gemini, claude...">
+      <div class="picker-results" id="pickerResults"></div>
+    </div>
+    <div class="warn" id="manyWarn" style="display:none;">Много моделей одновременно — каждая новая добавляет ещё один параллельный запрос и свой расход по ключу. Работает, но проверь, что готов оплатить все сразу.</div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-title">Реплики для теста (по одной на строку)</div>
+    <textarea id="lines" rows="8" spellcheck="false"></textarea>
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-top:8px;">
+      <div class="hint" style="margin-top:0;">Можно вставить .srt как есть — номера реплик и тайминги (00:00:11,761 --> 00:00:13,971) уберутся сами при вставке.</div>
+      <button class="secondary" id="cleanBtn" type="button" style="flex-shrink:0; margin-left:12px;">Убрать тайминги вручную</button>
+    </div>
+    <div class="row" style="margin-top:12px;">
+      <div>
+        <label>Язык оригинала → перевода</label>
+        <select id="langPair">
+          <option value="English->Russian" selected>English → Russian</option>
+          <option value="Japanese->Russian">Japanese → Russian</option>
+          <option value="Korean->Russian">Korean → Russian</option>
+        </select>
+      </div>
+      <div>
+        <label>Реплик в серии (для пересчёта стоимости)</label>
+        <input type="text" id="epSize" value="900">
+      </div>
+    </div>
+    <div class="hint">Тест гоняет только эти строки живьём через каждую модель, а стоимость эпизода — экстраполяция по фактическому расходу токенов на строку.</div>
+  </div>
+
+  <button id="runBtn">Перевести и сравнить</button>
+  <button class="secondary" id="resetBtn" style="margin-left:10px;">Сбросить пример</button>
+  <div class="status" id="status"></div>
+
+  <div class="screen" id="screen" style="display:none;">
+    <div class="screen-head">
+      <span>субтитры · построчное сравнение</span>
+      <span id="lineCount"></span>
+    </div>
+    <div style="overflow-x:auto;">
+      <div id="colHeads" class="model-col-heads"></div>
+      <div id="cues"></div>
+    </div>
+  </div>
+
+  <div class="summary" id="summary" style="display:none;"></div>
+
+</div>
+
+<script>
+const DEFAULT_MODEL_IDS = [
+  'mistralai/mistral-small-3.2-24b-instruct',
+  'deepseek/deepseek-v4-flash',
+  'deepseek/deepseek-v4-pro',
+];
+
+const SAMPLE_LINES = [
+  "Wait, you're telling me this was your plan the whole time?",
+  "I don't have time for this. Move.",
+  "She's not answering. Something's wrong.",
+  "You really thought I wouldn't notice?",
+  "Get down! Now!",
+  "It's not what it looks like.",
+  "We had a deal.",
+  "Don't you dare walk away from me.",
+];
+
+let CATALOG = [];        // full model list from OpenRouter: [{id, name, inCost, outCost}]
+let SELECTED = [];       // subset chosen by the user, same shape
+
+function el(id){ return document.getElementById(id); }
+
+function fmtPrice(inCost, outCost){
+  return `$${inCost.toFixed(4)} / $${outCost.toFixed(4)} за 1M`;
+}
+
+async function loadCatalog(){
+  const results = el('pickerResults');
+  results.innerHTML = '<div class="picker-loading">Загружаю каталог моделей OpenRouter...</div>';
+  try {
+    const resp = await fetch('https://openrouter.ai/api/v1/models');
+    if (!resp.ok) throw new Error(resp.statusText);
+    const data = await resp.json();
+    CATALOG = (data.data || []).map(m => ({
+      id: m.id,
+      name: m.name || m.id,
+      inCost: parseFloat(m.pricing?.prompt || '0') * 1e6,
+      outCost: parseFloat(m.pricing?.completion || '0') * 1e6,
+    })).sort((a, b) => a.name.localeCompare(b.name));
+
+    // preselect defaults that exist in the catalog
+    DEFAULT_MODEL_IDS.forEach(id => {
+      const found = CATALOG.find(m => m.id === id);
+      if (found) SELECTED.push(found);
+    });
+    renderSelected();
+    renderPicker('');
+  } catch (e) {
+    results.innerHTML = `<div class="picker-loading" style="color:var(--err)">Не удалось загрузить каталог: ${escapeHtml(e.message)}. Можно обновить страницу и попробовать снова.</div>`;
+  }
+}
+
+function renderPicker(query){
+  const results = el('pickerResults');
+  if (!CATALOG.length) return;
+  const q = query.trim().toLowerCase();
+  let matches = CATALOG;
+  if (q) {
+    matches = CATALOG.filter(m => m.id.toLowerCase().includes(q) || m.name.toLowerCase().includes(q));
+  }
+  matches = matches.slice(0, 60);
+
+  if (matches.length === 0) {
+    results.innerHTML = '<div class="picker-empty">Ничего не найдено.</div>';
+    return;
+  }
+
+  results.innerHTML = matches.map(m => {
+    const isAdded = SELECTED.some(s => s.id === m.id);
+    return `
+      <div class="picker-row ${isAdded ? 'added' : ''}" data-id="${escapeHtml(m.id)}">
+        <span class="id">${escapeHtml(m.name)} <span style="color:var(--dim)">— ${escapeHtml(m.id)}</span></span>
+        <span class="price">${isAdded ? 'добавлено' : fmtPrice(m.inCost, m.outCost)}</span>
+      </div>
+    `;
+  }).join('');
+
+  results.querySelectorAll('.picker-row').forEach(row => {
+    row.addEventListener('click', () => {
+      const id = row.getAttribute('data-id');
+      if (SELECTED.some(s => s.id === id)) return;
+      const model = CATALOG.find(m => m.id === id);
+      if (model) {
+        SELECTED.push(model);
+        renderSelected();
+        renderPicker(el('modelSearch').value);
+      }
+    });
+  });
+}
+
+function renderSelected(){
+  const container = el('selectedChips');
+  el('selCount').textContent = SELECTED.length ? `${SELECTED.length} выбрано` : '';
+  el('manyWarn').style.display = SELECTED.length > 6 ? 'block' : 'none';
+
+  if (SELECTED.length === 0) {
+    container.innerHTML = '<div class="empty-note">Ничего не выбрано — найди модели в поиске ниже.</div>';
+    return;
+  }
+  container.innerHTML = SELECTED.map(m => `
+    <div class="sel-chip" data-id="${escapeHtml(m.id)}">
+      <span>${escapeHtml(m.name)}</span>
+      <span class="price">${fmtPrice(m.inCost, m.outCost)}</span>
+      <button data-remove="${escapeHtml(m.id)}" title="Убрать">×</button>
+    </div>
+  `).join('');
+
+  container.querySelectorAll('button[data-remove]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const id = btn.getAttribute('data-remove');
+      SELECTED = SELECTED.filter(m => m.id !== id);
+      renderSelected();
+      renderPicker(el('modelSearch').value);
+    });
+  });
+}
+
+function resetSample(){
+  el('lines').value = SAMPLE_LINES.join('\n');
+}
+
+const TIMECODE_RE = /\d{1,2}:\d{2}:\d{2}[.,]\d{3}\s*-->\s*\d{1,2}:\d{2}:\d{2}[.,]\d{3}/;
+
+function looksLikeSubtitleFile(text){
+  return TIMECODE_RE.test(text);
+}
+
+function cleanSubtitleText(raw){
+  const text = raw.replace(/\r\n/g, '\n').replace(/\r/g, '\n').replace(/^WEBVTT.*\n/i, '');
+  const blocks = text.split(/\n\s*\n/);
+  let lines = [];
+
+  blocks.forEach(block => {
+    const blockLines = block.split('\n').map(l => l.trim()).filter(l => l.length > 0);
+    if (blockLines.length === 0) return;
+    let start = 0;
+    if (/^\d+$/.test(blockLines[0])) start = 1;
+    if (blockLines[start] && TIMECODE_RE.test(blockLines[start])) start += 1;
+    const textLines = blockLines.slice(start);
+    if (textLines.length > 0) {
+      const joined = textLines.join(' ').replace(/<[^>]+>/g, '').replace(/\{[^}]*\}/g, '').trim();
+      if (joined) lines.push(joined);
+    }
+  });
+
+  // fallback for files without blank lines between cues
+  if (lines.length === 0) {
+    lines = text.split('\n')
+      .map(l => l.trim())
+      .filter(l => l.length > 0 && !/^\d+$/.test(l) && !TIMECODE_RE.test(l))
+      .map(l => l.replace(/<[^>]+>/g, '').replace(/\{[^}]*\}/g, '').trim())
+      .filter(Boolean);
+  }
+
+  return lines;
+}
+
+function applyCleanIfSubtitle(text){
+  if (!looksLikeSubtitleFile(text)) return text;
+  const cleaned = cleanSubtitleText(text);
+  return cleaned.length ? cleaned.join('\n') : text;
+}
+
+async function translateWithModel(model, lines, langPair, apiKey){
+  const [src, tgt] = langPair.split('->');
+  const numbered = lines.map((l, i) => `${i+1}. ${l}`).join('\n');
+  const system = `You are a professional subtitle translator. Translate each numbered line from ${src} to ${tgt}, preserving natural spoken register, tone and length appropriate for subtitles. Return ONLY a JSON array of strings, one translated line per array element, in the same order and count as the input. No explanations, no markdown, no numbering in the output strings.`;
+
+  const resp = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${apiKey}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      model: model.id,
+      messages: [
+        { role: 'system', content: system },
+        { role: 'user', content: numbered }
+      ],
+      temperature: 0.3,
+    })
+  });
+
+  if (!resp.ok) {
+    const errText = await resp.text().catch(() => resp.statusText);
+    throw new Error(`${resp.status}: ${errText.slice(0, 200)}`);
+  }
+
+  const data = await resp.json();
+  const content = data?.choices?.[0]?.message?.content ?? '';
+  const usage = data?.usage ?? {};
+
+  let parsed;
+  try {
+    const cleaned = content.replace(/```json|```/g, '').trim();
+    parsed = JSON.parse(cleaned);
+    if (!Array.isArray(parsed)) throw new Error('not an array');
+  } catch (e) {
+    parsed = content.split('\n').filter(x => x.trim()).map(x => x.replace(/^\d+\.\s*/, ''));
+  }
+
+  return { lines: parsed, usage };
+}
+
+function renderScreen(lines, models){
+  el('screen').style.display = 'block';
+  el('lineCount').textContent = `${lines.length} реплик · ${models.length} моделей`;
+
+  const colHeads = el('colHeads');
+  colHeads.innerHTML = `<div style="width:64px;flex-shrink:0;"></div><div style="width:220px;flex-shrink:0;"></div>`;
+  models.forEach(m => {
+    const d = document.createElement('div');
+    d.className = 'model-col-head';
+    d.id = `head-${cssId(m.id)}`;
+    d.innerHTML = `${escapeHtml(m.name)}<span class="cost" id="cost-${cssId(m.id)}">—</span>`;
+    colHeads.appendChild(d);
+  });
+
+  const cues = el('cues');
+  cues.innerHTML = '';
+  lines.forEach((line, i) => {
+    const cue = document.createElement('div');
+    cue.className = 'cue';
+    cue.innerHTML = `
+      <div class="cue-num">${String(i+1).padStart(2,'0')}</div>
+      <div class="cue-src">${escapeHtml(line)}</div>
+      ${models.map(m => `<div class="cue-col" id="cell-${cssId(m.id)}-${i}"><span class="cap pending">…</span></div>`).join('')}
+    `;
+    cues.appendChild(cue);
+  });
+}
+
+function cssId(id){ return id.replace(/[^a-zA-Z0-9]/g, '_'); }
+
+function escapeHtml(s){
+  const div = document.createElement('div');
+  div.textContent = s;
+  return div.innerHTML;
+}
+
+function setCell(modelId, idx, text, isError){
+  const cell = document.getElementById(`cell-${cssId(modelId)}-${idx}`);
+  if (!cell) return;
+  cell.innerHTML = `<span class="cap${isError ? ' error' : ''}">${escapeHtml(text)}</span>`;
+}
+
+function renderSummary(results, lineCount, epSize){
+  const summary = el('summary');
+  summary.style.display = 'flex';
+  summary.innerHTML = '';
+
+  results.forEach(r => {
+    const card = document.createElement('div');
+    card.className = 'sum-card';
+    if (r.error) {
+      card.innerHTML = `<h3>${escapeHtml(r.model.name)}</h3><div class="sum-line" style="color:var(--err)">Ошибка: ${escapeHtml(r.error)}</div>`;
+    } else {
+      const inTok = r.usage.prompt_tokens || 0;
+      const outTok = r.usage.completion_tokens || 0;
+      const testCost = (inTok/1e6)*r.model.inCost + (outTok/1e6)*r.model.outCost;
+      const perLineIn = inTok / lineCount;
+      const perLineOut = outTok / lineCount;
+      const epCost = (perLineIn*epSize/1e6)*r.model.inCost + (perLineOut*epSize/1e6)*r.model.outCost;
+      card.innerHTML = `
+        <h3>${escapeHtml(r.model.name)}</h3>
+        <div class="sum-line"><span>Токены (вход/выход)</span><b>${inTok} / ${outTok}</b></div>
+        <div class="sum-line"><span>Стоимость теста</span><b>$${testCost.toFixed(5)}</b></div>
+        <div class="sum-line"><span>≈ на ${epSize} реплик</span><b class="ep">$${epCost.toFixed(4)}</b></div>
+      `;
+    }
+    summary.appendChild(card);
+  });
+}
+
+async function run(){
+  const apiKey = el('apiKey').value.trim();
+  const rawLines = el('lines').value.split('\n').map(l => l.trim()).filter(Boolean);
+  const langPair = el('langPair').value;
+  const epSize = parseInt(el('epSize').value) || 900;
+  const models = SELECTED;
+  const status = el('status');
+  const btn = el('runBtn');
+
+  status.className = 'status';
+  if (!apiKey) { status.textContent = 'Вставь ключ OpenRouter.'; status.className = 'status err'; return; }
+  if (rawLines.length === 0) { status.textContent = 'Добавь хотя бы одну реплику.'; status.className = 'status err'; return; }
+  if (models.length === 0) { status.textContent = 'Выбери хотя бы одну модель.'; status.className = 'status err'; return; }
+
+  btn.disabled = true;
+  status.textContent = `Запрашиваю ${models.length} модел${models.length===1?'ь':models.length<5?'и':'ей'}...`;
+
+  renderScreen(rawLines, models);
+  el('summary').style.display = 'none';
+
+  const results = await Promise.all(models.map(async (m) => {
+    try {
+      const { lines: translated, usage } = await translateWithModel(m, rawLines, langPair, apiKey);
+      rawLines.forEach((_, i) => setCell(m.id, i, translated[i] || '—', false));
+      const inTok = usage.prompt_tokens || 0;
+      const outTok = usage.completion_tokens || 0;
+      const testCost = (inTok/1e6)*m.inCost + (outTok/1e6)*m.outCost;
+      const headCost = document.getElementById(`cost-${cssId(m.id)}`);
+      if (headCost) headCost.textContent = `$${testCost.toFixed(5)}`;
+      return { model: m, usage };
+    } catch (e) {
+      rawLines.forEach((_, i) => setCell(m.id, i, e.message, true));
+      return { model: m, error: e.message };
+    }
+  }));
+
+  renderSummary(results, rawLines.length, epSize);
+  status.textContent = 'Готово.';
+  btn.disabled = false;
+}
+
+resetSample();
+loadCatalog();
+el('runBtn').addEventListener('click', run);
+el('resetBtn').addEventListener('click', resetSample);
+el('modelSearch').addEventListener('input', (e) => renderPicker(e.target.value));
+
+el('lines').addEventListener('paste', (e) => {
+  const pasted = (e.clipboardData || window.clipboardData).getData('text');
+  if (looksLikeSubtitleFile(pasted)) {
+    e.preventDefault();
+    const cleaned = cleanSubtitleText(pasted);
+    el('lines').value = cleaned.length ? cleaned.join('\n') : pasted;
+    const status = el('status');
+    status.className = 'status';
+    status.textContent = `Тайминги убраны, осталось ${cleaned.length} реплик.`;
+  }
+});
+
+el('cleanBtn').addEventListener('click', () => {
+  const current = el('lines').value;
+  const cleaned = cleanSubtitleText(current);
+  const status = el('status');
+  if (cleaned.length) {
+    el('lines').value = cleaned.join('\n');
+    status.className = 'status';
+    status.textContent = `Тайминги убраны, осталось ${cleaned.length} реплик.`;
+  } else {
+    status.className = 'status err';
+    status.textContent = 'Не нашёл таймингов/номеров для очистки — похоже, текст уже чистый.';
+  }
+});
+</script>
+</body>
+</html>
