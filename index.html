@@ -217,13 +217,34 @@
     </div>
     <div class="row" style="margin-top:12px;">
       <div>
-        <label>Язык оригинала → перевода</label>
-        <select id="langPair">
-          <option value="English->Russian" selected>English → Russian</option>
-          <option value="Japanese->Russian">Japanese → Russian</option>
-          <option value="Korean->Russian">Korean → Russian</option>
-        </select>
+        <label>Язык оригинала</label>
+        <div style="display:flex; gap:8px; align-items:center;">
+          <input type="text" id="srcLang" list="langList" value="English">
+          <button type="button" id="swapLangBtn" class="secondary" style="padding:10px 12px; flex-shrink:0;" title="Поменять местами">⇄</button>
+        </div>
       </div>
+      <div>
+        <label>Язык перевода</label>
+        <input type="text" id="tgtLang" list="langList" value="Russian">
+      </div>
+      <datalist id="langList">
+        <option value="Russian">
+        <option value="English">
+        <option value="Spanish">
+        <option value="German">
+        <option value="French">
+        <option value="Italian">
+        <option value="Portuguese">
+        <option value="Chinese">
+        <option value="Japanese">
+        <option value="Korean">
+        <option value="Turkish">
+        <option value="Arabic">
+        <option value="Hindi">
+        <option value="Polish">
+        <option value="Ukrainian">
+        <option value="Dutch">
+      </datalist>
       <div>
         <label>Реплик в серии (для пересчёта стоимости)</label>
         <input type="text" id="epSize" value="900">
@@ -416,8 +437,7 @@ function applyCleanIfSubtitle(text){
   return cleaned.length ? cleaned.join('\n') : text;
 }
 
-async function translateWithModel(model, lines, langPair, apiKey){
-  const [src, tgt] = langPair.split('->');
+async function translateWithModel(model, lines, src, tgt, apiKey){
   const numbered = lines.map((l, i) => `${i+1}. ${l}`).join('\n');
   const system = `You are a professional subtitle translator. Translate each numbered line from ${src} to ${tgt}, preserving natural spoken register, tone and length appropriate for subtitles. Return ONLY a JSON array of strings, one translated line per array element, in the same order and count as the input. No explanations, no markdown, no numbering in the output strings.`;
 
@@ -531,7 +551,8 @@ function renderSummary(results, lineCount, epSize){
 async function run(){
   const apiKey = el('apiKey').value.trim();
   const rawLines = el('lines').value.split('\n').map(l => l.trim()).filter(Boolean);
-  const langPair = el('langPair').value;
+  const src = el('srcLang').value.trim() || 'English';
+  const tgt = el('tgtLang').value.trim() || 'Russian';
   const epSize = parseInt(el('epSize').value) || 900;
   const models = SELECTED;
   const status = el('status');
@@ -550,7 +571,7 @@ async function run(){
 
   const results = await Promise.all(models.map(async (m) => {
     try {
-      const { lines: translated, usage } = await translateWithModel(m, rawLines, langPair, apiKey);
+      const { lines: translated, usage } = await translateWithModel(m, rawLines, src, tgt, apiKey);
       rawLines.forEach((_, i) => setCell(m.id, i, translated[i] || '—', false));
       const inTok = usage.prompt_tokens || 0;
       const outTok = usage.completion_tokens || 0;
@@ -599,6 +620,14 @@ el('cleanBtn').addEventListener('click', () => {
     status.className = 'status err';
     status.textContent = 'Не нашёл таймингов/номеров для очистки — похоже, текст уже чистый.';
   }
+});
+
+el('swapLangBtn').addEventListener('click', () => {
+  const src = el('srcLang');
+  const tgt = el('tgtLang');
+  const tmp = src.value;
+  src.value = tgt.value;
+  tgt.value = tmp;
 });
 </script>
 </body>
