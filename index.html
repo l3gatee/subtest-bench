@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Sub Test Bench — сравнение моделей перевода субтитров через OpenRouter</title>
-<meta name="description" content="Живое сравнение любых моделей OpenRouter по качеству и стоимости перевода субтитров: вставляешь реплики (можно прямо из .srt), выбираешь модели, видишь построчный перевод и реальную цену на серию.">
+<meta name="description" content="Живое сравнение любых моделей OpenRouter по качеству и стоимости перевода субтитров, с сохранением контекста сериала (глоссарий, персонажи) локально на компьютере.">
 <meta property="og:title" content="Sub Test Bench — сравнение моделей перевода субтитров">
 <meta property="og:description" content="Сравни, как разные модели с OpenRouter переводят одни и те же субтитры, и сколько это будет стоить на весь эпизод.">
 <meta property="og:type" content="website">
@@ -72,6 +72,21 @@
   .row > div{flex:1; min-width:200px;}
   .hint{font-size:11px; color:var(--dim); margin-top:6px; line-height:1.5;}
   .warn{font-size:11px; color:var(--sub-yellow); margin-top:6px; line-height:1.5;}
+
+  /* mode toggle */
+  .radio-chip{display:inline-flex; align-items:center; gap:8px; font-family:var(--mono); font-size:12px; margin-right:20px; cursor:pointer; color:var(--text);}
+  .radio-chip input{width:auto; margin:0; accent-color: var(--accent);}
+  .folder-status{font-family:var(--mono); font-size:12px; color:var(--dim);}
+
+  /* context editor tables */
+  .ctx-table{display:flex; flex-direction:column; gap:8px;}
+  .ctx-row{display:flex; gap:8px; align-items:center;}
+  .ctx-row input, .ctx-row select{flex:1; min-width:0;}
+  .ctx-row button{
+    flex-shrink:0; padding:9px 12px; background:transparent; border:1px solid var(--line);
+    color:var(--dim); font-size:13px; font-family:var(--mono); border-radius:6px;
+  }
+  .ctx-row button:hover{color:var(--err); border-color:var(--err);}
 
   /* selected model chips */
   .selected-chips{display:flex; gap:8px; flex-wrap:wrap; margin-bottom:12px; min-height:34px;}
@@ -177,6 +192,41 @@
   .sum-line b{color:var(--text); font-weight:600;}
   .sum-line .ep{color:var(--sub-yellow);}
 
+  /* full file translation */
+  input[type=file]{
+    width:100%; background:var(--panel-2); border:1px dashed var(--line);
+    color:var(--dim); border-radius:6px; padding:14px 12px;
+    font-family:var(--mono); font-size:12px; cursor:pointer;
+  }
+  .file-info{font-family:var(--mono); font-size:12px; color:var(--accent); margin-top:8px; min-height:16px;}
+  .progress-wrap{
+    background:var(--panel-2); border:1px solid var(--line); border-radius:20px;
+    height:10px; overflow:hidden; margin-top:14px; display:none;
+  }
+  .progress-bar{
+    height:100%; background:var(--sub-yellow); width:0%;
+    transition: width 0.3s ease;
+  }
+  .progress-label{font-family:var(--mono); font-size:11px; color:var(--dim); margin-top:6px;}
+
+  .srt-row{display:flex; border-bottom:1px solid #1c1c20; align-items:stretch;}
+  .srt-row:last-child{border-bottom:none;}
+  .srt-time{
+    width:130px; flex-shrink:0; display:flex; align-items:center;
+    font-family:var(--mono); font-size:10px; color:var(--dim); padding:8px 10px;
+    background:var(--panel-2); border-right:1px solid var(--line); line-height:1.4;
+  }
+  .srt-orig{
+    flex:1; padding:8px 12px; font-size:12px; color:var(--text); display:flex; align-items:center;
+    border-right:1px solid var(--line); line-height:1.4; background:var(--panel-2);
+  }
+  .srt-trans{
+    flex:1; background:var(--bg); border:none; color:var(--sub-yellow);
+    font-family:var(--sans); font-size:13px; padding:8px 12px;
+  }
+  .srt-trans:focus{outline:1px solid var(--accent); outline-offset:-1px;}
+  .srt-trans.pending{color:var(--dim); font-style:italic;}
+
   ::placeholder{color:#54545c;}
 </style>
 </head>
@@ -192,6 +242,54 @@
     <div class="panel-title">Ключ OpenRouter</div>
     <input type="password" id="apiKey" placeholder="sk-or-v1-..." autocomplete="off">
     <div class="hint">Ключ используется только в этой вкладке для прямых запросов к openrouter.ai из браузера и нигде не сохраняется — при обновлении страницы его нужно будет ввести заново.</div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-title">Режим перевода</div>
+    <label class="radio-chip"><input type="radio" name="mode" value="single" checked> Разовый перевод</label>
+    <label class="radio-chip"><input type="radio" name="mode" value="series"> Перевод сериала (с памятью контекста)</label>
+
+    <div id="seriesPanel" style="display:none; margin-top:16px;">
+      <div class="hint" style="margin-top:0;">Контекст сериала (персонажи, словарь терминов, заметки о стиле) хранится в файле <code>subtest-context.json</code> прямо в выбранной папке на твоём компьютере — не на сервере. Открой для каждого сериала свою папку, и при следующем эпизоде программа сама подхватит уже накопленный контекст.</div>
+
+      <div style="display:flex; gap:10px; align-items:center; margin-top:12px; flex-wrap:wrap;">
+        <button type="button" id="selectFolderBtn" class="secondary">Выбрать / создать папку сериала</button>
+        <span class="folder-status" id="folderStatus">Папка не выбрана</span>
+      </div>
+      <div class="warn" id="fsApiWarn" style="display:none;">Браузер не поддерживает выбор локальной папки — эта функция работает в Chrome и Edge на компьютере (не в Firefox/Safari, не в мобильных браузерах).</div>
+
+      <div id="contextEditor" style="display:none; margin-top:20px;">
+        <div class="row">
+          <div>
+            <label>Название сериала</label>
+            <input type="text" id="seriesName">
+          </div>
+        </div>
+
+        <div style="margin-top:20px; padding-top:16px; border-top:1px solid var(--line);">
+          <div class="panel-title" style="margin-bottom:8px;"><span>Персонажи</span></div>
+          <label>Быстрое добавление (через запятую или каждое имя с новой строки)</label>
+          <textarea id="bulkNames" rows="2" placeholder="Anna, Marcus, Jin..."></textarea>
+          <button type="button" id="bulkAddBtn" class="secondary" style="margin-top:8px; padding:8px 14px; font-size:12px;">Добавить всех</button>
+          <div id="charTable" class="ctx-table" style="margin-top:14px;"></div>
+          <button type="button" id="addCharBtn" class="secondary" style="margin-top:8px; padding:8px 14px; font-size:12px;">+ Персонаж</button>
+        </div>
+
+        <div style="margin-top:22px;">
+          <div class="panel-title" style="margin-bottom:8px;"><span>Словарь терминов</span></div>
+          <div id="glossTable" class="ctx-table"></div>
+          <button type="button" id="addGlossBtn" class="secondary" style="margin-top:8px; padding:8px 14px; font-size:12px;">+ Термин</button>
+        </div>
+
+        <div style="margin-top:22px;">
+          <label>Заметки о стиле / тоне сериала</label>
+          <textarea id="styleNotes" rows="3" placeholder="Например: тёмная комедия, много чёрного юмора, персонажи обращаются друг к другу на «ты»..."></textarea>
+        </div>
+
+        <button type="button" id="saveContextBtn" style="margin-top:16px;">Сохранить контекст</button>
+        <span class="status" id="contextStatus" style="display:inline-block; margin-left:12px;"></span>
+      </div>
+    </div>
   </div>
 
   <div class="panel">
@@ -270,6 +368,68 @@
 
   <div class="summary" id="summary" style="display:none;"></div>
 
+  <div class="panel" style="margin-top:24px;">
+    <div class="panel-title">Перевод всего эпизода (.srt) с сохранением таймингов</div>
+    <div class="hint" style="margin-top:0;">Загружаешь целый .srt файл, программа переводит его пачками через одну выбранную модель, сохраняя оригинальные номера и тайминги. Если что-то оборвётся на середине — прогресс сохраняется, и при повторной загрузке того же файла перевод продолжится с места остановки, а не с начала.</div>
+
+    <div class="row" style="margin-top:14px;">
+      <div>
+        <label>Файл .srt</label>
+        <input type="file" id="srtFileInput" accept=".srt,.vtt">
+        <div class="file-info" id="fileInfo"></div>
+      </div>
+      <div>
+        <label>Модель для перевода</label>
+        <select id="fullFileModel"><option value="">— сначала выбери модель(и) выше —</option></select>
+      </div>
+    </div>
+
+    <div class="warn" id="resumeInfo" style="display:none;"></div>
+
+    <div class="row" style="margin-top:12px;">
+      <div>
+        <label>Целевой размер пачки (реплик)</label>
+        <input type="text" id="batchSize" value="50">
+      </div>
+      <div>
+        <label>Хвост контекста (реплик из прошлой пачки)</label>
+        <input type="text" id="tailSize" value="10">
+      </div>
+      <div>
+        <label>Порог паузы для разреза (мс)</label>
+        <input type="text" id="pauseMs" value="1200">
+      </div>
+    </div>
+    <div class="hint">Пачка режется не строго по числу реплик, а по ближайшей паузе в диалоге (тишина между репликами дольше указанного порога) рядом с целевым размером — так разговор не обрывается посередине. Если подходящей паузы долго нет, пачка всё равно принудительно закрывается на ~1.6× от целевого размера, чтобы не упереться в лимит вывода модели.</div>
+
+    <div style="margin-top:14px;">
+      <label>Промпт перевода (можно менять, контекст сериала добавляется к нему автоматически)</label>
+      <textarea id="fullFilePrompt" rows="4"></textarea>
+    </div>
+
+    <div style="display:flex; gap:10px; margin-top:16px; flex-wrap:wrap;">
+      <button id="translateFileBtn" disabled>Перевести файл</button>
+      <button class="secondary" id="stopFileBtn" style="display:none;">Остановить</button>
+      <button class="secondary" id="clearProgressBtn" style="display:none;">Забыть сохранённый прогресс</button>
+    </div>
+    <div class="progress-wrap" id="progressWrap"><div class="progress-bar" id="progressBar"></div></div>
+    <div class="progress-label" id="progressLabel"></div>
+    <div class="status" id="fileStatus"></div>
+
+    <div id="costSummary" class="sum-card" style="display:none; margin-top:14px; max-width:420px;"></div>
+
+    <div id="srtTableWrap" style="display:none; margin-top:18px;">
+      <div class="screen-head" style="border-radius:10px 10px 0 0; border:1px solid var(--line); border-bottom:none;">
+        <span>оригинал / перевод — можно редактировать перед сохранением</span>
+        <span id="srtTableCount"></span>
+      </div>
+      <div style="max-height:520px; overflow-y:auto; border:1px solid var(--line); border-radius:0 0 10px 10px;">
+        <div id="srtTableBody"></div>
+      </div>
+      <button id="saveSrtBtn" style="margin-top:14px;">Сохранить .srt</button>
+    </div>
+  </div>
+
 </div>
 
 <script>
@@ -290,14 +450,32 @@ const SAMPLE_LINES = [
   "Don't you dare walk away from me.",
 ];
 
+const CONTEXT_FILE_NAME = 'subtest-context.json';
+
 let CATALOG = [];        // full model list from OpenRouter: [{id, name, inCost, outCost}]
 let SELECTED = [];       // subset chosen by the user, same shape
+let dirHandle = null;    // FileSystemDirectoryHandle for the chosen series folder
+let seriesContext = null; // { seriesName, characters:[], glossary:[], styleNotes, history:[] }
 
 function el(id){ return document.getElementById(id); }
 
 function fmtPrice(inCost, outCost){
   return `$${inCost.toFixed(4)} / $${outCost.toFixed(4)} за 1M`;
 }
+
+function escapeHtml(s){
+  const div = document.createElement('div');
+  div.textContent = s;
+  return div.innerHTML;
+}
+
+function escapeAttr(s){
+  return (s || '').replace(/&/g, '&amp;').replace(/"/g, '&quot;');
+}
+
+function cssId(id){ return id.replace(/[^a-zA-Z0-9]/g, '_'); }
+
+/* ---------- model catalog ---------- */
 
 async function loadCatalog(){
   const results = el('pickerResults');
@@ -313,7 +491,6 @@ async function loadCatalog(){
       outCost: parseFloat(m.pricing?.completion || '0') * 1e6,
     })).sort((a, b) => a.name.localeCompare(b.name));
 
-    // preselect defaults that exist in the catalog
     DEFAULT_MODEL_IDS.forEach(id => {
       const found = CATALOG.find(m => m.id === id);
       if (found) SELECTED.push(found);
@@ -389,7 +566,23 @@ function renderSelected(){
       renderPicker(el('modelSearch').value);
     });
   });
+
+  updateFullFileModelSelect();
 }
+
+function updateFullFileModelSelect(){
+  const sel = el('fullFileModel');
+  const prevValue = sel.value;
+  if (SELECTED.length === 0) {
+    sel.innerHTML = '<option value="">— сначала выбери модель(и) выше —</option>';
+  } else {
+    sel.innerHTML = SELECTED.map(m => `<option value="${escapeHtml(m.id)}">${escapeHtml(m.name)}</option>`).join('');
+    if (SELECTED.some(m => m.id === prevValue)) sel.value = prevValue;
+  }
+  checkTranslateFileBtn();
+}
+
+/* ---------- sample / srt cleaning ---------- */
 
 function resetSample(){
   el('lines').value = SAMPLE_LINES.join('\n');
@@ -419,7 +612,6 @@ function cleanSubtitleText(raw){
     }
   });
 
-  // fallback for files without blank lines between cues
   if (lines.length === 0) {
     lines = text.split('\n')
       .map(l => l.trim())
@@ -431,15 +623,177 @@ function cleanSubtitleText(raw){
   return lines;
 }
 
-function applyCleanIfSubtitle(text){
-  if (!looksLikeSubtitleFile(text)) return text;
-  const cleaned = cleanSubtitleText(text);
-  return cleaned.length ? cleaned.join('\n') : text;
+/* ---------- series context (local folder via File System Access API) ---------- */
+
+function fsApiSupported(){
+  return 'showDirectoryPicker' in window;
 }
 
-async function translateWithModel(model, lines, src, tgt, apiKey){
+function currentMode(){
+  const checked = document.querySelector('input[name="mode"]:checked');
+  return checked ? checked.value : 'single';
+}
+
+function onModeChange(){
+  const mode = currentMode();
+  el('seriesPanel').style.display = mode === 'series' ? 'block' : 'none';
+  if (mode === 'series' && !fsApiSupported()) {
+    el('fsApiWarn').style.display = 'block';
+    el('selectFolderBtn').disabled = true;
+  }
+}
+
+async function selectSeriesFolder(){
+  if (!fsApiSupported()) return;
+  try {
+    dirHandle = await window.showDirectoryPicker();
+    el('folderStatus').textContent = `Папка: ${dirHandle.name}`;
+    await loadOrCreateContext();
+  } catch (e) {
+    if (e.name !== 'AbortError') {
+      el('folderStatus').textContent = `Ошибка доступа: ${e.message}`;
+    }
+  }
+}
+
+async function loadOrCreateContext(){
+  try {
+    const fh = await dirHandle.getFileHandle(CONTEXT_FILE_NAME);
+    const file = await fh.getFile();
+    const text = await file.text();
+    seriesContext = JSON.parse(text);
+    seriesContext.characters = seriesContext.characters || [];
+    seriesContext.glossary = seriesContext.glossary || [];
+    seriesContext.history = seriesContext.history || [];
+  } catch (e) {
+    seriesContext = { seriesName: dirHandle.name, characters: [], glossary: [], styleNotes: '', history: [] };
+    await saveSeriesContext(false);
+  }
+
+  el('seriesName').value = seriesContext.seriesName || dirHandle.name;
+  el('styleNotes').value = seriesContext.styleNotes || '';
+  renderCharTable();
+  renderGlossTable();
+  el('contextEditor').style.display = 'block';
+
+  const status = el('contextStatus');
+  status.className = 'status';
+  status.textContent = seriesContext.history.length
+    ? `Контекст загружен, прошлых прогонов: ${seriesContext.history.length}`
+    : 'Новый контекст создан в этой папке';
+}
+
+async function saveSeriesContext(showStatus = true){
+  if (!dirHandle || !seriesContext) return;
+  seriesContext.seriesName = el('seriesName').value.trim() || seriesContext.seriesName;
+  seriesContext.styleNotes = el('styleNotes').value;
+  try {
+    const fh = await dirHandle.getFileHandle(CONTEXT_FILE_NAME, { create: true });
+    const writable = await fh.createWritable();
+    await writable.write(JSON.stringify(seriesContext, null, 2));
+    await writable.close();
+    if (showStatus) {
+      const status = el('contextStatus');
+      status.className = 'status';
+      status.textContent = 'Сохранено.';
+    }
+  } catch (e) {
+    if (showStatus) {
+      const status = el('contextStatus');
+      status.className = 'status err';
+      status.textContent = `Ошибка сохранения: ${e.message}`;
+    }
+  }
+}
+
+function renderCharTable(){
+  const box = el('charTable');
+  box.innerHTML = '';
+  if (!seriesContext.characters.length) {
+    box.innerHTML = '<div class="empty-note">Персонажи не добавлены — можно не заполнять, если пол легко понятен из текста.</div>';
+    return;
+  }
+  seriesContext.characters.forEach((c, i) => {
+    const row = document.createElement('div');
+    row.className = 'ctx-row';
+    row.innerHTML = `
+      <input type="text" placeholder="Имя" value="${escapeAttr(c.name)}" data-field="name">
+      <select data-field="gender">
+        <option value="женский" ${c.gender==='женский'?'selected':''}>женский</option>
+        <option value="мужской" ${c.gender==='мужской'?'selected':''}>мужской</option>
+        <option value="другое" ${c.gender==='другое'?'selected':''}>другое</option>
+      </select>
+      <input type="text" placeholder="Заметка (необязательно)" value="${escapeAttr(c.note || '')}" data-field="note">
+      <button type="button" data-remove title="Убрать">×</button>
+    `;
+    row.querySelectorAll('input, select').forEach(inp => {
+      inp.addEventListener('input', () => { c[inp.dataset.field] = inp.value; });
+    });
+    row.querySelector('[data-remove]').addEventListener('click', () => {
+      seriesContext.characters.splice(i, 1);
+      renderCharTable();
+    });
+    box.appendChild(row);
+  });
+}
+
+function renderGlossTable(){
+  const box = el('glossTable');
+  box.innerHTML = '';
+  if (!seriesContext.glossary.length) {
+    box.innerHTML = '<div class="empty-note">Термины не добавлены.</div>';
+    return;
+  }
+  seriesContext.glossary.forEach((g, i) => {
+    const row = document.createElement('div');
+    row.className = 'ctx-row';
+    row.innerHTML = `
+      <input type="text" placeholder="Оригинал" value="${escapeAttr(g.term)}" data-field="term">
+      <input type="text" placeholder="Перевод" value="${escapeAttr(g.translation)}" data-field="translation">
+      <input type="text" placeholder="Заметка (необязательно)" value="${escapeAttr(g.note || '')}" data-field="note">
+      <button type="button" data-remove title="Убрать">×</button>
+    `;
+    row.querySelectorAll('input').forEach(inp => {
+      inp.addEventListener('input', () => { g[inp.dataset.field] = inp.value; });
+    });
+    row.querySelector('[data-remove]').addEventListener('click', () => {
+      seriesContext.glossary.splice(i, 1);
+      renderGlossTable();
+    });
+    box.appendChild(row);
+  });
+}
+
+function buildContextPromptSection(tgt){
+  if (!seriesContext) return '';
+  const parts = [];
+  if (seriesContext.seriesName) parts.push(`This is an episode of the series "${seriesContext.seriesName}".`);
+  if (seriesContext.styleNotes && seriesContext.styleNotes.trim()) parts.push(`Style/tone notes: ${seriesContext.styleNotes.trim()}`);
+
+  const chars = (seriesContext.characters || []).filter(c => c.name && c.name.trim());
+  if (chars.length) {
+    const list = chars.map(c => `${c.name} — ${c.gender}${c.note ? ', ' + c.note : ''}`).join('; ');
+    parts.push(`Known characters and their gender — keep grammatical gender agreement in ${tgt} consistent for these speakers across every line, even short ones: ${list}.`);
+  }
+
+  const gloss = (seriesContext.glossary || []).filter(g => g.term && g.term.trim() && g.translation && g.translation.trim());
+  if (gloss.length) {
+    const list = gloss.map(g => `"${g.term}" → "${g.translation}"${g.note ? ` (${g.note})` : ''}`).join('; ');
+    parts.push(`Established glossary for this series — always use these exact translations: ${list}.`);
+  }
+
+  return parts.join('\n');
+}
+
+/* ---------- translation ---------- */
+
+async function translateWithModel(model, lines, src, tgt, apiKey, contextSection){
   const numbered = lines.map((l, i) => `${i+1}. ${l}`).join('\n');
-  const system = `You are a professional subtitle translator. Translate each numbered line from ${src} to ${tgt}, preserving natural spoken register, tone and length appropriate for subtitles. Return ONLY a JSON array of strings, one translated line per array element, in the same order and count as the input. No explanations, no markdown, no numbering in the output strings.`;
+  let system = `You are a professional subtitle translator. Translate each numbered line from ${src} to ${tgt}, preserving natural spoken register, tone and length appropriate for subtitles. Keep the exact same number of lines as input, one output line per input line, in the same order — do not merge, split, or skip any lines. Every single line must be translated, never leave any line in the original language, even short or repeated words. Keep punctuation and formatting as in input. Translate naturally and idiomatically, preserving tone, humor, and character voice rather than word-for-word. Do not censor the translation. Use the surrounding lines as context, not just each line in isolation — in particular, infer each speaker's gender from names, pronouns, and dialogue cues elsewhere in the text, and keep grammatical gender agreement in ${tgt} consistent for the same speaker across all their lines, even when a line alone gives no clue. Give only the translated lines, no line numbers, no comments, no explanations. Return ONLY a JSON array of strings, one translated line per array element.`;
+
+  if (contextSection) {
+    system += `\n\nSeries context — use this to keep terminology, names and characters consistent:\n${contextSection}`;
+  }
 
   const resp = await fetch('https://openrouter.ai/api/v1/chat/completions', {
     method: 'POST',
@@ -478,6 +832,369 @@ async function translateWithModel(model, lines, src, tgt, apiKey){
   return { lines: parsed, usage };
 }
 
+/* ---------- full .srt file translation (preserves timing) ---------- */
+
+let uploadedSrtCues = null;
+let uploadedFileBaseName = '';
+let stopRequested = false;
+
+function parseSrtFile(raw){
+  const text = raw.replace(/\r\n/g, '\n').replace(/\r/g, '\n').replace(/^WEBVTT.*\n/i, '');
+  const blocks = text.split(/\n\s*\n/);
+  const cues = [];
+
+  blocks.forEach(block => {
+    const blockLines = block.split('\n').map(l => l.trim()).filter(l => l.length > 0);
+    if (blockLines.length === 0) return;
+    let start = 0;
+    if (/^\d+$/.test(blockLines[0])) start = 1;
+    if (!blockLines[start] || !TIMECODE_RE.test(blockLines[start])) return;
+    const time = blockLines[start];
+    start += 1;
+    const textLines = blockLines.slice(start);
+    if (textLines.length === 0) return;
+    cues.push({ time, textLines });
+  });
+
+  return cues;
+}
+
+function extractMeta(textLines){
+  const joined = textLines.join(' ').trim();
+  let text = joined;
+  let prefixTag = '';
+
+  const tagMatch = text.match(/^(\{[^}]*\})/);
+  if (tagMatch) {
+    prefixTag = tagMatch[1];
+    text = text.slice(tagMatch[1].length).trim();
+  }
+
+  let italic = false;
+  const italicMatch = text.match(/^<i>([\s\S]*)<\/i>$/i);
+  if (italicMatch) {
+    italic = true;
+    text = italicMatch[1].trim();
+  }
+
+  text = text.replace(/<[^>]+>/g, '').trim();
+  return { plainText: text, prefixTag, italic };
+}
+
+function formatTranslatedCue(meta, translated){
+  let out = translated;
+  if (meta.italic) out = `<i>${out}</i>`;
+  if (meta.prefixTag) out = `${meta.prefixTag}${out}`;
+  return out;
+}
+
+const DEFAULT_FULL_FILE_PROMPT = `Translate from {0} to {1}. Keep the exact same number of lines as input, one output line per input line, in the same order — do not merge, split, or skip any lines. Every single line must be translated, never leave any line in the original language, even short or repeated words. Keep punctuation and formatting as in input. Translate naturally and idiomatically, preserving tone, humor, and character voice rather than word-for-word. Do not censor the translation. Give only the translated lines, no line numbers, no comments, no explanations.`;
+
+function hashStr(str){
+  let hash = 5381;
+  for (let i = 0; i < str.length; i++) {
+    hash = ((hash << 5) + hash) + str.charCodeAt(i);
+    hash |= 0;
+  }
+  return (hash >>> 0).toString(36);
+}
+
+function fileFingerprint(cues, filename){
+  const raw = filename + '|' + cues.length + '|' + cues.map(c => c.textLines.join('')).join('|');
+  return hashStr(raw);
+}
+
+function loadProgress(fp){
+  try {
+    const raw = localStorage.getItem('subtest-progress:' + fp);
+    return raw ? JSON.parse(raw) : null;
+  } catch (e) { return null; }
+}
+
+function saveProgress(fp, data){
+  try { localStorage.setItem('subtest-progress:' + fp, JSON.stringify(data)); } catch (e) {}
+}
+
+function clearProgress(fp){
+  try { localStorage.removeItem('subtest-progress:' + fp); } catch (e) {}
+}
+
+async function translateBatchForFullFile(model, texts, src, tgt, apiKey, basePrompt, contextSection, tailPairs){
+  const numbered = texts.map((l, i) => `${i+1}. ${l}`).join('\n');
+  let system = basePrompt.replace('{0}', src).replace('{1}', tgt);
+
+  if (contextSection) {
+    system += `\n\nSeries context — use this to keep terminology, names and characters consistent:\n${contextSection}`;
+  }
+  if (tailPairs && tailPairs.length) {
+    const tailText = tailPairs.map(p => `"${p.orig}" → "${p.translated}"`).join('\n');
+    system += `\n\nThe following lines immediately precede this batch and were already translated — use them only for continuity of tone/terminology, do not re-translate them:\n${tailText}`;
+  }
+
+  const resp = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${apiKey}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      model: model.id,
+      messages: [
+        { role: 'system', content: system },
+        { role: 'user', content: numbered }
+      ],
+      temperature: 0.3,
+    })
+  });
+
+  if (!resp.ok) {
+    const errText = await resp.text().catch(() => resp.statusText);
+    throw new Error(`${resp.status}: ${errText.slice(0, 200)}`);
+  }
+
+  const data = await resp.json();
+  const content = data?.choices?.[0]?.message?.content ?? '';
+  const usage = data?.usage ?? {};
+
+  let parsed;
+  try {
+    const cleaned = content.replace(/```json|```/g, '').trim();
+    parsed = JSON.parse(cleaned);
+    if (!Array.isArray(parsed)) throw new Error('not an array');
+  } catch (e) {
+    parsed = content.split('\n').filter(x => x.trim()).map(x => x.replace(/^\d+\.\s*/, ''));
+  }
+
+  return { lines: parsed, usage };
+}
+
+function timeToMs(t){
+  const [hms, ms] = t.split(/[.,]/);
+  const [h, m, s] = hms.split(':').map(Number);
+  return (((h * 60 + m) * 60 + s) * 1000) + parseInt(ms || '0', 10);
+}
+
+function parseCueTimes(timeStr){
+  const [startStr, endStr] = timeStr.split('-->').map(s => s.trim());
+  return { start: timeToMs(startStr), end: timeToMs(endStr) };
+}
+
+function buildBatches(cues, targetSize, pauseMs){
+  const maxSize = Math.round(targetSize * 1.6);
+  const batches = [];
+  let current = [];
+
+  for (let i = 0; i < cues.length; i++) {
+    current.push(i);
+    const isLast = i === cues.length - 1;
+
+    if (isLast) {
+      batches.push(current);
+      current = [];
+      continue;
+    }
+
+    let gap = 0;
+    try {
+      gap = parseCueTimes(cues[i + 1].time).start - parseCueTimes(cues[i].time).end;
+    } catch (e) {
+      gap = 0;
+    }
+
+    const reachedTarget = current.length >= targetSize;
+    const reachedMax = current.length >= maxSize;
+
+    if (reachedMax || (reachedTarget && gap >= pauseMs)) {
+      batches.push(current);
+      current = [];
+    }
+  }
+
+  if (current.length) batches.push(current);
+  return batches; // array of arrays of cue indices
+}
+
+/**
+ * Translates a full file, resuming from `existingLines` where already filled in.
+ * Persists progress after every batch. Stops (without throwing) on the first
+ * batch error, or if `shouldStop()` returns true between batches, returning
+ * what was completed so far.
+ */
+async function translateFullFile(cues, model, src, tgt, apiKey, basePrompt, contextSection, batchSize, tailSize, pauseMs, existingLines, fp, filename, onBatchDone, shouldStop){
+  const finalLines = existingLines.slice();
+  const batches = buildBatches(cues, batchSize, pauseMs);
+  let tailPairs = [];
+  let usageIn = 0, usageOut = 0;
+  let stoppedAt = null;
+  let errorMsg = null;
+  let cancelled = false;
+
+  for (const idxs of batches) {
+    if (shouldStop && shouldStop()) {
+      cancelled = true;
+      stoppedAt = idxs[0];
+      break;
+    }
+
+    const alreadyDone = idxs.every(i => finalLines[i] && finalLines[i].length > 0);
+
+    if (alreadyDone) {
+      // rebuild tail context from existing translations for continuity
+      const tailIdxs = idxs.slice(Math.max(0, idxs.length - tailSize));
+      tailPairs = tailIdxs.map(i => ({ orig: extractMeta(cues[i].textLines).plainText, translated: finalLines[i] }));
+      onBatchDone(finalLines, null);
+      continue;
+    }
+
+    const metas = idxs.map(i => extractMeta(cues[i].textLines));
+    const plainTexts = metas.map(m => m.plainText);
+
+    try {
+      const { lines: translated, usage } = await translateBatchForFullFile(model, plainTexts, src, tgt, apiKey, basePrompt, contextSection, tailPairs);
+      idxs.forEach((cueIdx, j) => {
+        const t = translated[j] || plainTexts[j];
+        finalLines[cueIdx] = formatTranslatedCue(metas[j], t);
+      });
+      usageIn += usage.prompt_tokens || 0;
+      usageOut += usage.completion_tokens || 0;
+
+      const tailStart = Math.max(0, idxs.length - tailSize);
+      tailPairs = [];
+      for (let j = tailStart; j < idxs.length; j++) {
+        tailPairs.push({ orig: plainTexts[j], translated: translated[j] || plainTexts[j] });
+      }
+
+      saveProgress(fp, { filename, total: cues.length, lines: finalLines, timestamp: Date.now() });
+      onBatchDone(finalLines, null);
+    } catch (e) {
+      saveProgress(fp, { filename, total: cues.length, lines: finalLines, timestamp: Date.now() });
+      stoppedAt = idxs[0];
+      errorMsg = e.message;
+      onBatchDone(finalLines, errorMsg);
+      break;
+    }
+  }
+
+  return { finalLines, usageIn, usageOut, stoppedAt, errorMsg, cancelled };
+}
+
+function buildSrtOutput(cues, translatedLines){
+  return cues.map((c, i) => `${i + 1}\n${c.time}\n${translatedLines[i] || ''}\n`).join('\n').trim() + '\n';
+}
+
+function downloadTextFile(filename, text){
+  const blob = new Blob([text], { type: 'text/plain;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+async function saveOrDownloadSrt(filename, text){
+  const mode = currentMode();
+  if (mode === 'series' && dirHandle) {
+    try {
+      const fh = await dirHandle.getFileHandle(filename, { create: true });
+      const writable = await fh.createWritable();
+      await writable.write(text);
+      await writable.close();
+      return { savedTo: `папку сериала (${dirHandle.name})` };
+    } catch (e) {
+      downloadTextFile(filename, text);
+      return { savedTo: 'загрузки браузера (не удалось сохранить в папку сериала)' };
+    }
+  }
+  downloadTextFile(filename, text);
+  return { savedTo: 'загрузки браузера' };
+}
+
+function checkTranslateFileBtn(){
+  const btn = el('translateFileBtn');
+  const hasModel = el('fullFileModel').value;
+  btn.disabled = !(uploadedSrtCues && uploadedSrtCues.length && hasModel);
+}
+
+function renderSrtTable(cues, lines){
+  const box = el('srtTableBody');
+  box.innerHTML = '';
+  el('srtTableWrap').style.display = 'block';
+  el('srtTableCount').textContent = `${cues.length} реплик`;
+
+  cues.forEach((c, i) => {
+    const row = document.createElement('div');
+    row.className = 'srt-row';
+    const orig = c.textLines.join(' ');
+    const hasTranslation = lines[i] && lines[i].length > 0;
+    row.innerHTML = `
+      <div class="srt-time">${escapeHtml(c.time)}</div>
+      <div class="srt-orig">${escapeHtml(orig)}</div>
+      <input type="text" class="srt-trans${hasTranslation ? '' : ' pending'}" id="srtTrans-${i}" value="${escapeAttr(lines[i] || '')}" placeholder="…">
+    `;
+    box.appendChild(row);
+  });
+}
+
+function updateSrtTableCell(i, value){
+  const input = document.getElementById(`srtTrans-${i}`);
+  if (!input) return;
+  input.value = value || '';
+  input.classList.toggle('pending', !value);
+}
+
+function readSrtTableValues(count){
+  const values = [];
+  for (let i = 0; i < count; i++) {
+    const input = document.getElementById(`srtTrans-${i}`);
+    values.push(input ? input.value : '');
+  }
+  return values;
+}
+
+let cachedUsdRubRate = null;
+
+async function fetchUsdRubRate(){
+  if (cachedUsdRubRate) return cachedUsdRubRate;
+  try {
+    const resp = await fetch('https://open.er-api.com/v6/latest/USD');
+    const data = await resp.json();
+    if (data?.rates?.RUB) {
+      cachedUsdRubRate = { rate: data.rates.RUB, approx: false };
+      return cachedUsdRubRate;
+    }
+    throw new Error('no RUB rate in response');
+  } catch (e) {
+    cachedUsdRubRate = { rate: 80, approx: true };
+    return cachedUsdRubRate;
+  }
+}
+
+function formatDuration(ms){
+  const totalSec = Math.round(ms / 1000);
+  const min = Math.floor(totalSec / 60);
+  const sec = totalSec % 60;
+  return min > 0 ? `${min} мин ${sec} сек` : `${sec} сек`;
+}
+
+async function renderCostSummary(model, usageIn, usageOut, durationMs, stopped){
+  const box = el('costSummary');
+  const costUsd = (usageIn / 1e6) * model.inCost + (usageOut / 1e6) * model.outCost;
+  const { rate, approx } = await fetchUsdRubRate();
+  const costRub = costUsd * rate;
+
+  box.style.display = 'block';
+  box.innerHTML = `
+    <h3>${stopped ? 'Потрачено до остановки' : 'Итого по переводу'}</h3>
+    <div class="sum-line"><span>Токены (вход/выход)</span><b>${usageIn} / ${usageOut}</b></div>
+    <div class="sum-line"><span>Стоимость</span><b>$${costUsd.toFixed(4)} ≈ ${costRub.toFixed(2)} ₽${approx ? ' (курс приблизительный)' : ''}</b></div>
+    <div class="sum-line"><span>Время перевода</span><b>${formatDuration(durationMs)}</b></div>
+  `;
+}
+
+
 function renderScreen(lines, models){
   el('screen').style.display = 'block';
   el('lineCount').textContent = `${lines.length} реплик · ${models.length} моделей`;
@@ -504,14 +1221,6 @@ function renderScreen(lines, models){
     `;
     cues.appendChild(cue);
   });
-}
-
-function cssId(id){ return id.replace(/[^a-zA-Z0-9]/g, '_'); }
-
-function escapeHtml(s){
-  const div = document.createElement('div');
-  div.textContent = s;
-  return div.innerHTML;
 }
 
 function setCell(modelId, idx, text, isError){
@@ -557,11 +1266,14 @@ async function run(){
   const models = SELECTED;
   const status = el('status');
   const btn = el('runBtn');
+  const mode = currentMode();
 
   status.className = 'status';
   if (!apiKey) { status.textContent = 'Вставь ключ OpenRouter.'; status.className = 'status err'; return; }
   if (rawLines.length === 0) { status.textContent = 'Добавь хотя бы одну реплику.'; status.className = 'status err'; return; }
   if (models.length === 0) { status.textContent = 'Выбери хотя бы одну модель.'; status.className = 'status err'; return; }
+
+  const contextSection = (mode === 'series' && seriesContext) ? buildContextPromptSection(tgt) : '';
 
   btn.disabled = true;
   status.textContent = `Запрашиваю ${models.length} модел${models.length===1?'ь':models.length<5?'и':'ей'}...`;
@@ -571,7 +1283,7 @@ async function run(){
 
   const results = await Promise.all(models.map(async (m) => {
     try {
-      const { lines: translated, usage } = await translateWithModel(m, rawLines, src, tgt, apiKey);
+      const { lines: translated, usage } = await translateWithModel(m, rawLines, src, tgt, apiKey, contextSection);
       rawLines.forEach((_, i) => setCell(m.id, i, translated[i] || '—', false));
       const inTok = usage.prompt_tokens || 0;
       const outTok = usage.completion_tokens || 0;
@@ -586,6 +1298,16 @@ async function run(){
   }));
 
   renderSummary(results, rawLines.length, epSize);
+
+  if (mode === 'series' && dirHandle && seriesContext) {
+    seriesContext.history.push({
+      date: new Date().toISOString(),
+      lines: rawLines.length,
+      models: models.map(m => m.id),
+    });
+    await saveSeriesContext(false);
+  }
+
   status.textContent = 'Готово.';
   btn.disabled = false;
 }
@@ -628,6 +1350,216 @@ el('swapLangBtn').addEventListener('click', () => {
   const tmp = src.value;
   src.value = tgt.value;
   tgt.value = tmp;
+});
+
+document.querySelectorAll('input[name="mode"]').forEach(r => r.addEventListener('change', onModeChange));
+el('selectFolderBtn').addEventListener('click', selectSeriesFolder);
+el('addCharBtn').addEventListener('click', () => {
+  seriesContext.characters.push({ name: '', gender: 'женский', note: '' });
+  renderCharTable();
+});
+el('addGlossBtn').addEventListener('click', () => {
+  seriesContext.glossary.push({ term: '', translation: '', note: '' });
+  renderGlossTable();
+});
+el('saveContextBtn').addEventListener('click', () => saveSeriesContext(true));
+
+el('bulkAddBtn').addEventListener('click', () => {
+  const status = el('contextStatus');
+  if (!seriesContext) return;
+  const raw = el('bulkNames').value;
+  const names = raw.split(/[,\n]/).map(s => s.trim()).filter(Boolean);
+  let added = 0;
+  names.forEach(name => {
+    const exists = seriesContext.characters.some(c => c.name.toLowerCase() === name.toLowerCase());
+    if (!exists) {
+      seriesContext.characters.push({ name, gender: 'женский', note: '' });
+      added++;
+    }
+  });
+  renderCharTable();
+  el('bulkNames').value = '';
+  status.className = 'status';
+  status.textContent = added
+    ? `Добавлено ${added}. Проверь пол у каждого (по умолчанию стоит «женский») и нажми «Сохранить контекст».`
+    : 'Ничего не добавлено — все имена уже есть в списке.';
+});
+
+el('fullFilePrompt').value = DEFAULT_FULL_FILE_PROMPT;
+
+let currentFingerprint = null;
+
+el('srtFileInput').addEventListener('change', async (e) => {
+  const file = e.target.files[0];
+  const info = el('fileInfo');
+  const resumeInfo = el('resumeInfo');
+  const clearBtn = el('clearProgressBtn');
+  if (!file) return;
+
+  uploadedFileBaseName = file.name.replace(/\.(srt|vtt)$/i, '');
+  resumeInfo.style.display = 'none';
+  clearBtn.style.display = 'none';
+  el('srtTableWrap').style.display = 'none';
+  el('costSummary').style.display = 'none';
+
+  try {
+    const text = await file.text();
+    uploadedSrtCues = parseSrtFile(text);
+    if (uploadedSrtCues.length === 0) {
+      info.style.color = 'var(--err)';
+      info.textContent = 'Не нашёл реплик с таймингами в этом файле — проверь формат.';
+      currentFingerprint = null;
+    } else {
+      info.style.color = 'var(--accent)';
+      info.textContent = `${file.name} — ${uploadedSrtCues.length} реплик распознано.`;
+      currentFingerprint = fileFingerprint(uploadedSrtCues, file.name);
+
+      const progress = loadProgress(currentFingerprint);
+      if (progress && progress.lines) {
+        const doneCount = progress.lines.filter(l => l && l.length > 0).length;
+        if (doneCount > 0) {
+          renderSrtTable(uploadedSrtCues, progress.lines);
+          if (doneCount < uploadedSrtCues.length) {
+            resumeInfo.style.display = 'block';
+            resumeInfo.textContent = `Найден незавершённый перевод этого файла: готово ${doneCount} из ${uploadedSrtCues.length}. При запуске продолжу с этого места.`;
+          } else {
+            resumeInfo.style.display = 'block';
+            resumeInfo.textContent = `Этот файл уже переведён полностью (сохранённый черновик), но не был сохранён на диск. Можно отредактировать таблицу ниже и сразу нажать «Сохранить .srt», либо запустить заново.`;
+          }
+          clearBtn.style.display = 'inline-block';
+        }
+      } else {
+        renderSrtTable(uploadedSrtCues, new Array(uploadedSrtCues.length).fill(''));
+      }
+    }
+  } catch (err) {
+    uploadedSrtCues = null;
+    currentFingerprint = null;
+    info.style.color = 'var(--err)';
+    info.textContent = `Не удалось прочитать файл: ${err.message}`;
+  }
+  checkTranslateFileBtn();
+});
+
+el('fullFileModel').addEventListener('change', checkTranslateFileBtn);
+
+el('clearProgressBtn').addEventListener('click', () => {
+  if (currentFingerprint) clearProgress(currentFingerprint);
+  el('resumeInfo').style.display = 'none';
+  el('clearProgressBtn').style.display = 'none';
+  if (uploadedSrtCues) renderSrtTable(uploadedSrtCues, new Array(uploadedSrtCues.length).fill(''));
+});
+
+el('translateFileBtn').addEventListener('click', async () => {
+  const apiKey = el('apiKey').value.trim();
+  const src = el('srcLang').value.trim() || 'English';
+  const tgt = el('tgtLang').value.trim() || 'Russian';
+  const batchSize = Math.max(5, parseInt(el('batchSize').value) || 50);
+  const tailSize = Math.max(0, parseInt(el('tailSize').value) || 10);
+  const pauseMs = Math.max(0, parseInt(el('pauseMs').value) || 1200);
+  const basePrompt = el('fullFilePrompt').value.trim() || DEFAULT_FULL_FILE_PROMPT;
+  const modelId = el('fullFileModel').value;
+  const model = SELECTED.find(m => m.id === modelId);
+  const status = el('fileStatus');
+  const btn = el('translateFileBtn');
+  const stopBtn = el('stopFileBtn');
+  const progressWrap = el('progressWrap');
+  const progressBar = el('progressBar');
+  const progressLabel = el('progressLabel');
+  const mode = currentMode();
+
+  status.className = 'status';
+  if (!apiKey) { status.textContent = 'Вставь ключ OpenRouter.'; status.className = 'status err'; return; }
+  if (!model) { status.textContent = 'Выбери модель для перевода файла.'; status.className = 'status err'; return; }
+  if (!uploadedSrtCues || !uploadedSrtCues.length) { status.textContent = 'Сначала загрузи .srt файл.'; status.className = 'status err'; return; }
+
+  const contextSection = (mode === 'series' && seriesContext) ? buildContextPromptSection(tgt) : '';
+  const existing = loadProgress(currentFingerprint);
+  const existingLines = (existing && existing.lines) ? existing.lines : new Array(uploadedSrtCues.length).fill('');
+
+  btn.disabled = true;
+  stopRequested = false;
+  stopBtn.style.display = 'inline-block';
+  stopBtn.disabled = false;
+  stopBtn.textContent = 'Остановить';
+  el('resumeInfo').style.display = 'none';
+  progressWrap.style.display = 'block';
+  const startDone = existingLines.filter(l => l && l.length > 0).length;
+  progressBar.style.width = `${Math.round((startDone / uploadedSrtCues.length) * 100)}%`;
+  progressLabel.textContent = `${startDone} / ${uploadedSrtCues.length}`;
+  status.textContent = startDone > 0 ? 'Продолжаю перевод с сохранённого места...' : 'Перевожу файл пачками...';
+
+  const startTime = Date.now();
+
+  const { finalLines, usageIn, usageOut, stoppedAt, errorMsg, cancelled } = await translateFullFile(
+    uploadedSrtCues, model, src, tgt, apiKey, basePrompt, contextSection, batchSize, tailSize, pauseMs,
+    existingLines, currentFingerprint, uploadedFileBaseName,
+    (lines, batchError) => {
+      const doneCount = lines.filter(l => l && l.length > 0).length;
+      progressBar.style.width = `${Math.round((doneCount / uploadedSrtCues.length) * 100)}%`;
+      progressLabel.textContent = `${doneCount} / ${uploadedSrtCues.length}`;
+      lines.forEach((val, i) => { if (val) updateSrtTableCell(i, val); });
+    },
+    () => stopRequested
+  );
+
+  const durationMs = Date.now() - startTime;
+  await renderCostSummary(model, usageIn, usageOut, durationMs, !!(stoppedAt !== null));
+
+  stopBtn.style.display = 'none';
+
+  if (cancelled) {
+    const doneCount = finalLines.filter(l => l && l.length > 0).length;
+    status.className = 'status';
+    status.textContent = `Остановлено вручную: готово ${doneCount} из ${uploadedSrtCues.length}. Уже переведённое сохранено — загрузи тот же файл снова (или просто нажми «Перевести файл» ещё раз, если файл всё ещё выбран), чтобы продолжить с этого места.`;
+    el('clearProgressBtn').style.display = 'inline-block';
+  } else if (stoppedAt !== null) {
+    status.className = 'status err';
+    status.textContent = `Остановлено на реплике ${stoppedAt + 1} из ${uploadedSrtCues.length}: ${errorMsg}. Прогресс сохранён — загрузи тот же файл ещё раз и нажми «Перевести файл», чтобы продолжить с этого места.`;
+    el('clearProgressBtn').style.display = 'inline-block';
+  } else {
+    status.className = 'status';
+    status.textContent = `Перевод завершён. Проверь таблицу ниже, при необходимости отредактируй, и нажми «Сохранить .srt».`;
+  }
+
+  btn.disabled = false;
+});
+
+el('stopFileBtn').addEventListener('click', () => {
+  stopRequested = true;
+  const stopBtn = el('stopFileBtn');
+  stopBtn.disabled = true;
+  stopBtn.textContent = 'Останавливаю...';
+  el('fileStatus').className = 'status';
+  el('fileStatus').textContent = 'Останавливаю после завершения текущей пачки — уже переведённое сохранится...';
+});
+
+el('saveSrtBtn').addEventListener('click', async () => {
+  const status = el('fileStatus');
+  if (!uploadedSrtCues || !uploadedSrtCues.length) return;
+  const tgt = el('tgtLang').value.trim() || 'Russian';
+  const values = readSrtTableValues(uploadedSrtCues.length);
+  const srtText = buildSrtOutput(uploadedSrtCues, values);
+  const filename = `${uploadedFileBaseName}.${tgt.toLowerCase().slice(0,2)}.srt`;
+  const result = await saveOrDownloadSrt(filename, srtText);
+
+  status.className = 'status';
+  status.textContent = `Сохранено: ${filename} → ${result.savedTo}.`;
+
+  if (currentFingerprint) clearProgress(currentFingerprint);
+  el('resumeInfo').style.display = 'none';
+  el('clearProgressBtn').style.display = 'none';
+
+  const mode = currentMode();
+  if (mode === 'series' && dirHandle && seriesContext) {
+    seriesContext.history.push({
+      date: new Date().toISOString(),
+      lines: uploadedSrtCues.length,
+      models: [el('fullFileModel').value],
+      file: filename,
+    });
+    await saveSeriesContext(false);
+  }
 });
 </script>
 </body>
