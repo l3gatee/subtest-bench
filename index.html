@@ -11,18 +11,23 @@
 <meta name="twitter:card" content="summary">
 <style>
   :root{
-    --bg: #0a0a0c;
-    --panel: #131316;
-    --panel-2: #1a1a1e;
-    --line: #2a2a30;
-    --text: #ececea;
-    --dim: #86868f;
-    --sub-yellow: #ffcf4d;
-    --accent: #5fc7bd;
-    --accent-dim: #3a7d76;
-    --err: #ff6b6b;
+    --bg: #FAF8F3;
+    --panel: #FFFFFF;
+    --panel-2: #F2EFE6;
+    --line: #E4DFD1;
+    --text: #211F1A;
+    --dim: #837C6C;
+    --sub-yellow: #B5451B;      /* kept as variable name for compat; now the terracotta accent */
+    --accent: #B5451B;
+    --accent-ink: #7A2E10;
+    --accent-soft: #F2DED2;
+    --accent-2: #2F6F62;
+    --accent-dim: #D9B8A6;
+    --warn: #92600B;
+    --err: #B3261E;
     --mono: ui-monospace, 'SF Mono', 'JetBrains Mono', Menlo, Consolas, monospace;
     --sans: -apple-system, 'Segoe UI', Inter, sans-serif;
+    --serif: Georgia, 'Iowan Old Style', 'Palatino Linotype', 'Times New Roman', serif;
   }
   *{box-sizing:border-box;}
   body{
@@ -32,46 +37,48 @@
     font-family: var(--sans);
     min-height:100vh;
   }
-  .wrap{max-width:1200px; margin:0 auto; padding:28px 20px 60px;}
+  .wrap{max-width:1200px; margin:0 auto; padding:36px 20px 70px;}
 
   .header{
-    display:flex; align-items:baseline; justify-content:space-between;
-    border-bottom:1px solid var(--line); padding-bottom:16px; margin-bottom:24px;
+    display:flex; align-items:flex-end; justify-content:space-between;
+    border-bottom:2px solid var(--text); padding-bottom:18px; margin-bottom:30px;
     flex-wrap:wrap; gap:8px;
   }
   .header h1{
-    font-family: var(--mono); font-size:20px; font-weight:600; margin:0;
-    letter-spacing:0.5px;
+    font-family: var(--serif); font-size:30px; font-weight:500; margin:0;
+    letter-spacing:-0.3px; color:var(--text);
   }
-  .header h1 span{color:var(--sub-yellow);}
-  .header .tag{font-family:var(--mono); font-size:11px; color:var(--dim); letter-spacing:1px;}
+  .header h1 span{color:var(--accent); font-style:italic;}
+  .header .tag{font-family:var(--mono); font-size:11px; color:var(--dim); letter-spacing:1px; padding-bottom:4px;}
 
   .panel{
     background: var(--panel);
     border:1px solid var(--line);
-    border-radius:10px;
-    padding:18px 20px;
-    margin-bottom:18px;
+    border-radius:14px;
+    padding:22px 24px;
+    margin-bottom:20px;
+    box-shadow: 0 1px 2px rgba(33,31,26,0.03);
   }
   .panel-title{
-    font-family:var(--mono); font-size:11px; color:var(--dim);
-    letter-spacing:1.5px; text-transform:uppercase; margin-bottom:12px;
+    font-family:var(--mono); font-size:10.5px; color:var(--dim);
+    letter-spacing:1.6px; text-transform:uppercase; margin-bottom:14px;
     display:flex; justify-content:space-between; align-items:center;
   }
 
   label{display:block; font-size:12px; color:var(--dim); margin-bottom:6px; font-family:var(--mono);}
   input[type=text], input[type=password], textarea, select{
     width:100%; background:var(--panel-2); border:1px solid var(--line);
-    color:var(--text); border-radius:6px; padding:10px 12px;
+    color:var(--text); border-radius:8px; padding:10px 12px;
     font-family:var(--mono); font-size:13px; resize:vertical;
   }
   input[type=text]:focus, input[type=password]:focus, textarea:focus{
-    outline:none; border-color:var(--accent);
+    outline:none; border-color:var(--accent); background:var(--panel);
+    box-shadow: 0 0 0 3px var(--accent-soft);
   }
   .row{display:flex; gap:14px; flex-wrap:wrap;}
   .row > div{flex:1; min-width:200px;}
-  .hint{font-size:11px; color:var(--dim); margin-top:6px; line-height:1.5;}
-  .warn{font-size:11px; color:var(--sub-yellow); margin-top:6px; line-height:1.5;}
+  .hint{font-size:11.5px; color:var(--dim); margin-top:6px; line-height:1.55;}
+  .warn{font-size:11.5px; color:var(--warn); margin-top:6px; line-height:1.55;}
 
   /* mode toggle */
   .radio-chip{display:inline-flex; align-items:center; gap:8px; font-family:var(--mono); font-size:12px; margin-right:20px; cursor:pointer; color:var(--text);}
@@ -84,7 +91,7 @@
   .ctx-row input, .ctx-row select{flex:1; min-width:0;}
   .ctx-row button{
     flex-shrink:0; padding:9px 12px; background:transparent; border:1px solid var(--line);
-    color:var(--dim); font-size:13px; font-family:var(--mono); border-radius:6px;
+    color:var(--dim); font-size:13px; font-family:var(--mono); border-radius:8px;
   }
   .ctx-row button:hover{color:var(--err); border-color:var(--err);}
 
@@ -92,22 +99,22 @@
   .selected-chips{display:flex; gap:8px; flex-wrap:wrap; margin-bottom:12px; min-height:34px;}
   .sel-chip{
     display:flex; align-items:center; gap:8px;
-    background:rgba(95,199,189,0.1); border:1px solid var(--accent-dim); border-radius:20px;
-    padding:6px 8px 6px 14px; font-family:var(--mono); font-size:12px; color:var(--text);
+    background:var(--accent-soft); border:1px solid var(--accent-dim); border-radius:20px;
+    padding:6px 8px 6px 14px; font-family:var(--mono); font-size:12px; color:var(--accent-ink);
   }
   .sel-chip button{
-    background:transparent; border:none; color:var(--dim); font-size:14px;
+    background:transparent; border:none; color:var(--accent-ink); opacity:0.6; font-size:14px;
     padding:0 6px; cursor:pointer; line-height:1; border-radius:50%;
   }
-  .sel-chip button:hover{color:var(--err);}
-  .sel-chip .price{color:var(--dim); font-size:10px;}
+  .sel-chip button:hover{color:var(--err); opacity:1;}
+  .sel-chip .price{color:var(--accent-ink); opacity:0.65; font-size:10px;}
   .empty-note{font-family:var(--mono); font-size:12px; color:var(--dim); padding:6px 0;}
 
   /* model picker */
   .picker{position:relative;}
   .picker-results{
     margin-top:8px; max-height:280px; overflow-y:auto;
-    border:1px solid var(--line); border-radius:8px; background:var(--panel-2);
+    border:1px solid var(--line); border-radius:10px; background:var(--panel);
   }
   .picker-row{
     display:flex; justify-content:space-between; align-items:center;
@@ -115,7 +122,7 @@
     cursor:pointer; font-family:var(--mono); font-size:12px;
   }
   .picker-row:last-child{border-bottom:none;}
-  .picker-row:hover{background:rgba(95,199,189,0.06);}
+  .picker-row:hover{background:var(--panel-2);}
   .picker-row.added{opacity:0.4; cursor:default;}
   .picker-row .id{color:var(--text);}
   .picker-row .price{color:var(--dim); font-size:10px; white-space:nowrap; margin-left:12px;}
@@ -124,58 +131,60 @@
   .models-count{font-family:var(--mono); font-size:10px; color:var(--dim); font-weight:normal; text-transform:none; letter-spacing:0;}
 
   button{
-    background: var(--sub-yellow); color:#1a1400; border:none;
-    font-family:var(--mono); font-weight:700; font-size:13px;
-    padding:12px 22px; border-radius:6px; cursor:pointer;
-    letter-spacing:0.5px;
+    background: var(--accent); color:#FFF6EF; border:none;
+    font-family:var(--mono); font-weight:600; font-size:13px;
+    padding:12px 22px; border-radius:8px; cursor:pointer;
+    letter-spacing:0.3px;
+    box-shadow: 0 1px 2px rgba(122,46,16,0.15);
   }
-  button:hover{filter:brightness(1.08);}
-  button:disabled{background:var(--line); color:var(--dim); cursor:not-allowed;}
+  button:hover{background:var(--accent-ink);}
+  button:disabled{background:var(--line); color:var(--dim); box-shadow:none; cursor:not-allowed;}
   button.secondary{
-    background:transparent; color:var(--accent); border:1px solid var(--accent-dim);
-    font-weight:600; padding:10px 16px;
+    background:transparent; color:var(--accent-ink); border:1px solid var(--accent-dim);
+    font-weight:600; padding:10px 16px; box-shadow:none;
   }
+  button.secondary:hover{background:var(--accent-soft);}
 
   .status{font-family:var(--mono); font-size:12px; color:var(--dim); margin-top:10px; min-height:16px;}
   .status.err{color:var(--err);}
 
   .screen{
-    background:#000; border-radius:10px; border:1px solid var(--line);
+    background:var(--panel); border-radius:14px; border:1px solid var(--line);
     padding:0; overflow-x:auto; margin-top:6px;
+    box-shadow: 0 1px 2px rgba(33,31,26,0.03);
   }
   .screen-head{
     display:flex; justify-content:space-between; align-items:center;
-    padding:10px 16px; border-bottom:1px solid var(--line); background:var(--panel);
+    padding:11px 16px; border-bottom:1px solid var(--line); background:var(--panel-2);
     font-family:var(--mono); font-size:11px; color:var(--dim);
   }
   .model-col-heads{display:flex; min-width:max-content;}
-  .model-col-head{width:220px; flex-shrink:0; text-align:center; padding:12px; font-family:var(--mono); font-size:12px; color:var(--accent); border-left:1px solid var(--line);}
+  .model-col-head{width:220px; flex-shrink:0; text-align:center; padding:12px; font-family:var(--mono); font-size:12px; color:var(--accent-ink); border-left:1px solid var(--line);}
   .model-col-head .cost{display:block; color:var(--dim); font-size:10px; margin-top:3px;}
 
   .cue{
-    display:flex; border-bottom:1px solid #161618;
-    min-height:64px; min-width:max-content;
+    display:flex; border-bottom:1px solid var(--line);
+    min-height:60px; min-width:max-content;
   }
   .cue:last-child{border-bottom:none;}
   .cue-num{
     width:64px; flex-shrink:0; display:flex; align-items:center; justify-content:center;
-    font-family:var(--mono); font-size:11px; color:var(--dim); background:#0d0d0f;
+    font-family:var(--mono); font-size:11px; color:var(--dim); background:var(--panel-2);
     border-right:1px solid var(--line);
   }
   .cue-src{
     width:220px; flex-shrink:0; display:flex; align-items:center;
-    padding:10px 14px; font-size:13px; color:var(--text); background:#0d0d0f;
+    padding:10px 14px; font-size:13px; color:var(--text); background:var(--panel-2);
     border-right:1px solid var(--line); line-height:1.4;
   }
   .cue-col{
     width:220px; flex-shrink:0; display:flex; align-items:center; justify-content:center;
-    padding:10px 16px; border-left:1px solid #161618;
+    padding:10px 16px; border-left:1px solid var(--line);
   }
   .cap{
-    color: var(--sub-yellow);
+    color: var(--accent-ink);
     font-size:14px; line-height:1.45; text-align:center;
     font-family:var(--sans);
-    text-shadow: 0 1px 3px rgba(0,0,0,0.6);
   }
   .cap.pending{color:var(--dim); font-style:italic; font-size:12px;}
   .cap.error{color:var(--err); font-size:11px; font-family:var(--mono);}
@@ -185,31 +194,32 @@
   }
   .sum-card{
     flex:1; min-width:200px; background:var(--panel); border:1px solid var(--line);
-    border-radius:10px; padding:16px 18px;
+    border-radius:14px; padding:16px 18px;
+    box-shadow: 0 1px 2px rgba(33,31,26,0.03);
   }
-  .sum-card h3{font-family:var(--mono); font-size:12px; color:var(--accent); margin:0 0 10px; letter-spacing:0.5px;}
+  .sum-card h3{font-family:var(--mono); font-size:12px; color:var(--accent-ink); margin:0 0 10px; letter-spacing:0.5px;}
   .sum-line{display:flex; justify-content:space-between; font-size:12px; color:var(--dim); margin-bottom:6px; font-family:var(--mono);}
   .sum-line b{color:var(--text); font-weight:600;}
-  .sum-line .ep{color:var(--sub-yellow);}
+  .sum-line .ep{color:var(--accent);}
 
   /* full file translation */
   input[type=file]{
     width:100%; background:var(--panel-2); border:1px dashed var(--line);
-    color:var(--dim); border-radius:6px; padding:14px 12px;
+    color:var(--dim); border-radius:8px; padding:14px 12px;
     font-family:var(--mono); font-size:12px; cursor:pointer;
   }
-  .file-info{font-family:var(--mono); font-size:12px; color:var(--accent); margin-top:8px; min-height:16px;}
+  .file-info{font-family:var(--mono); font-size:12px; color:var(--accent-ink); margin-top:8px; min-height:16px;}
   .progress-wrap{
     background:var(--panel-2); border:1px solid var(--line); border-radius:20px;
     height:10px; overflow:hidden; margin-top:14px; display:none;
   }
   .progress-bar{
-    height:100%; background:var(--sub-yellow); width:0%;
+    height:100%; background:var(--accent); width:0%;
     transition: width 0.3s ease;
   }
   .progress-label{font-family:var(--mono); font-size:11px; color:var(--dim); margin-top:6px;}
 
-  .srt-row{display:flex; border-bottom:1px solid #1c1c20; align-items:stretch;}
+  .srt-row{display:flex; border-bottom:1px solid var(--line); align-items:stretch;}
   .srt-row:last-child{border-bottom:none;}
   .srt-time{
     width:130px; flex-shrink:0; display:flex; align-items:center;
@@ -221,13 +231,34 @@
     border-right:1px solid var(--line); line-height:1.4; background:var(--panel-2);
   }
   .srt-trans{
-    flex:1; background:var(--bg); border:none; color:var(--sub-yellow);
+    flex:1; background:var(--panel); border:none; color:var(--accent-ink);
     font-family:var(--sans); font-size:13px; padding:8px 12px;
   }
-  .srt-trans:focus{outline:1px solid var(--accent); outline-offset:-1px;}
+  .srt-trans:focus{outline:2px solid var(--accent); outline-offset:-2px;}
   .srt-trans.pending{color:var(--dim); font-style:italic;}
 
-  ::placeholder{color:#54545c;}
+  ::placeholder{color:#B4AD9C;}
+
+  body.dark-theme{
+    --bg: #0a0a0c;
+    --panel: #131316;
+    --panel-2: #1a1a1e;
+    --line: #2a2a30;
+    --text: #ececea;
+    --dim: #86868f;
+    --accent: #F2B155;
+    --accent-ink: #F2B155;
+    --accent-soft: #3A2E17;
+    --accent-2: #5fc7bd;
+    --accent-dim: #6B5326;
+    --warn: #E4AF57;
+    --err: #FF6B6B;
+  }
+  body.dark-theme ::placeholder{color:#54545c;}
+  body.dark-theme .panel,
+  body.dark-theme .screen,
+  body.dark-theme .sum-card{ box-shadow: 0 1px 3px rgba(0,0,0,0.4); }
+  body.dark-theme button:not(.secondary){ box-shadow: 0 1px 3px rgba(0,0,0,0.5); }
 </style>
 </head>
 <body>
@@ -235,7 +266,10 @@
 
   <div class="header">
     <h1>SUB<span>TEST</span>_BENCH</h1>
-    <div class="tag">// сравнение любых моделей OpenRouter вживую</div>
+    <div style="display:flex; align-items:center; gap:14px;">
+      <div class="tag">// сравнение любых моделей OpenRouter вживую</div>
+      <button type="button" id="themeToggleBtn" class="secondary" style="padding:7px 12px; font-size:11px;">🌙 Тёмная тема</button>
+    </div>
   </div>
 
   <div class="panel">
@@ -264,13 +298,33 @@
             <label>Название сериала</label>
             <input type="text" id="seriesName">
           </div>
+          <div>
+            <label>Модель для автозаполнения через ИИ</label>
+            <select id="aiFillModel"><option value="">— сначала выбери модель(и) ниже —</option></select>
+          </div>
         </div>
+        <label class="radio-chip" style="margin-top:10px;"><input type="checkbox" id="aiWebSearch" checked> Искать в интернете (точнее для персонажей/сюжета, чуть дороже за запрос)</label>
+        <div class="warn" style="margin-top:8px;">Модель отвечает по своим знаниям (плюс веб-поиск, если включён выше) и может путать или выдумывать детали, особенно для менее известных сериалов — результат всегда проверяй перед сохранением, это черновик, а не факт.</div>
 
         <div style="margin-top:20px; padding-top:16px; border-top:1px solid var(--line);">
           <div class="panel-title" style="margin-bottom:8px;"><span>Персонажи</span></div>
           <label>Быстрое добавление (через запятую или каждое имя с новой строки)</label>
           <textarea id="bulkNames" rows="2" placeholder="Anna, Marcus, Jin..."></textarea>
-          <button type="button" id="bulkAddBtn" class="secondary" style="margin-top:8px; padding:8px 14px; font-size:12px;">Добавить всех</button>
+
+          <div class="row" style="margin-top:10px;">
+            <div>
+              <label>Сезон (необязательно)</label>
+              <input type="text" id="aiCharsSeason" placeholder="например: 2">
+            </div>
+          </div>
+          <label style="margin-top:10px;">Промпт для поиска персонажей (можно менять — {series} и {season} подставляются автоматически)</label>
+          <textarea id="aiCharsPrompt" rows="4"></textarea>
+
+          <div style="display:flex; gap:10px; margin-top:8px; flex-wrap:wrap;">
+            <button type="button" id="bulkAddBtn" class="secondary" style="padding:8px 14px; font-size:12px;">Добавить всех</button>
+            <button type="button" id="aiCharsBtn" class="secondary" style="padding:8px 14px; font-size:12px;">Найти персонажей через ИИ</button>
+          </div>
+          <div class="status" id="aiCharsStatus"></div>
           <div id="charTable" class="ctx-table" style="margin-top:14px;"></div>
           <button type="button" id="addCharBtn" class="secondary" style="margin-top:8px; padding:8px 14px; font-size:12px;">+ Персонаж</button>
         </div>
@@ -284,6 +338,8 @@
         <div style="margin-top:22px;">
           <label>Заметки о стиле / тоне сериала</label>
           <textarea id="styleNotes" rows="3" placeholder="Например: тёмная комедия, много чёрного юмора, персонажи обращаются друг к другу на «ты»..."></textarea>
+          <button type="button" id="aiStyleBtn" class="secondary" style="margin-top:8px; padding:8px 14px; font-size:12px;">Заполнить с помощью ИИ</button>
+          <div class="status" id="aiStyleStatus"></div>
         </div>
 
         <button type="button" id="saveContextBtn" style="margin-top:16px;">Сохранить контекст</button>
@@ -435,8 +491,8 @@
 <script>
 const DEFAULT_MODEL_IDS = [
   'mistralai/mistral-small-3.2-24b-instruct',
-  'deepseek/deepseek-v4-flash',
   'deepseek/deepseek-v4-pro',
+  'anthropic/claude-sonnet-5',
 ];
 
 const SAMPLE_LINES = [
@@ -571,7 +627,12 @@ function renderSelected(){
 }
 
 function updateFullFileModelSelect(){
-  const sel = el('fullFileModel');
+  populateModelSelect(el('fullFileModel'));
+  populateModelSelect(el('aiFillModel'));
+  checkTranslateFileBtn();
+}
+
+function populateModelSelect(sel){
   const prevValue = sel.value;
   if (SELECTED.length === 0) {
     sel.innerHTML = '<option value="">— сначала выбери модель(и) выше —</option>';
@@ -579,7 +640,6 @@ function updateFullFileModelSelect(){
     sel.innerHTML = SELECTED.map(m => `<option value="${escapeHtml(m.id)}">${escapeHtml(m.name)}</option>`).join('');
     if (SELECTED.some(m => m.id === prevValue)) sel.value = prevValue;
   }
-  checkTranslateFileBtn();
 }
 
 /* ---------- sample / srt cleaning ---------- */
@@ -787,6 +847,28 @@ function buildContextPromptSection(tgt){
 
 /* ---------- translation ---------- */
 
+async function askModel(model, apiKey, prompt, useWebSearch){
+  const modelId = useWebSearch ? `${model.id}:online` : model.id;
+  const resp = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${apiKey}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      model: modelId,
+      messages: [{ role: 'user', content: prompt }],
+      temperature: 0.3,
+    })
+  });
+  if (!resp.ok) {
+    const errText = await resp.text().catch(() => resp.statusText);
+    throw new Error(`${resp.status}: ${errText.slice(0, 200)}`);
+  }
+  const data = await resp.json();
+  return (data?.choices?.[0]?.message?.content ?? '').trim();
+}
+
 async function translateWithModel(model, lines, src, tgt, apiKey, contextSection){
   const numbered = lines.map((l, i) => `${i+1}. ${l}`).join('\n');
   let system = `You are a professional subtitle translator. Translate each numbered line from ${src} to ${tgt}, preserving natural spoken register, tone and length appropriate for subtitles. Keep the exact same number of lines as input, one output line per input line, in the same order — do not merge, split, or skip any lines. Every single line must be translated, never leave any line in the original language, even short or repeated words. Keep punctuation and formatting as in input. Translate naturally and idiomatically, preserving tone, humor, and character voice rather than word-for-word. Do not censor the translation. Use the surrounding lines as context, not just each line in isolation — in particular, infer each speaker's gender from names, pronouns, and dialogue cues elsewhere in the text, and keep grammatical gender agreement in ${tgt} consistent for the same speaker across all their lines, even when a line alone gives no clue. Give only the translated lines, no line numbers, no comments, no explanations. Return ONLY a JSON array of strings, one translated line per array element.`;
@@ -889,6 +971,8 @@ function formatTranslatedCue(meta, translated){
 }
 
 const DEFAULT_FULL_FILE_PROMPT = `Translate from {0} to {1}. Keep the exact same number of lines as input, one output line per input line, in the same order — do not merge, split, or skip any lines. Every single line must be translated, never leave any line in the original language, even short or repeated words. Keep punctuation and formatting as in input. Translate naturally and idiomatically, preserving tone, humor, and character voice rather than word-for-word. Do not censor the translation. Give only the translated lines, no line numbers, no comments, no explanations.`;
+
+const DEFAULT_AI_CHARS_PROMPT = `List the main and recurring named characters of the TV series "{series}"{season}, as their names appear in the original-language version of the show. Reply with ONLY a comma-separated list of character names, nothing else — no descriptions, no numbering, no extra text. If you are not fully confident about the exact character list, still give your best-guess list, but start your reply with "ПРИМЕРНО: " before the list so the person knows to double-check it carefully.`;
 
 function hashStr(str){
   let hash = 5381;
@@ -1312,6 +1396,21 @@ async function run(){
   btn.disabled = false;
 }
 
+function applyTheme(theme){
+  document.body.classList.toggle('dark-theme', theme === 'dark');
+  el('themeToggleBtn').textContent = theme === 'dark' ? '☀️ Светлая тема' : '🌙 Тёмная тема';
+}
+
+let savedTheme = 'light';
+try { savedTheme = localStorage.getItem('subtest-theme') || 'light'; } catch (e) {}
+applyTheme(savedTheme);
+
+el('themeToggleBtn').addEventListener('click', () => {
+  const next = document.body.classList.contains('dark-theme') ? 'light' : 'dark';
+  applyTheme(next);
+  try { localStorage.setItem('subtest-theme', next); } catch (e) {}
+});
+
 resetSample();
 loadCatalog();
 el('runBtn').addEventListener('click', run);
@@ -1385,7 +1484,74 @@ el('bulkAddBtn').addEventListener('click', () => {
     : 'Ничего не добавлено — все имена уже есть в списке.';
 });
 
+function getAiFillModel(){
+  const id = el('aiFillModel').value;
+  return SELECTED.find(m => m.id === id);
+}
+
+el('aiStyleBtn').addEventListener('click', async () => {
+  const status = el('aiStyleStatus');
+  const apiKey = el('apiKey').value.trim();
+  const seriesTitle = el('seriesName').value.trim();
+  const model = getAiFillModel();
+
+  status.className = 'status';
+  if (!apiKey) { status.className = 'status err'; status.textContent = 'Вставь ключ OpenRouter.'; return; }
+  if (!seriesTitle) { status.className = 'status err'; status.textContent = 'Сначала впиши название сериала.'; return; }
+  if (!model) { status.className = 'status err'; status.textContent = 'Выбери модель для автозаполнения.'; return; }
+
+  status.textContent = 'Запрашиваю у модели...';
+  const prompt = `In 2-4 sentences, describe the overall tone, genre and dialogue style of the TV series "${seriesTitle}", specifically for someone translating its subtitles: overall genre/mood, formality of the dialogue, presence of humor/sarcasm/slang, and any distinctive speech patterns. If you are not confident you actually know this specific series, say so explicitly in Russian instead of guessing or inventing details. Answer in Russian, plain text only, no markdown, no preamble.`;
+
+  try {
+    const useWebSearch = el('aiWebSearch').checked;
+    const result = await askModel(model, apiKey, prompt, useWebSearch);
+    const current = el('styleNotes').value.trim();
+    el('styleNotes').value = current ? `${current}\n\n${result}` : result;
+    status.className = 'status';
+    status.textContent = 'Готово — проверь текст и не забудь нажать «Сохранить контекст».';
+  } catch (e) {
+    status.className = 'status err';
+    status.textContent = `Ошибка: ${e.message}`;
+  }
+});
+
+el('aiCharsBtn').addEventListener('click', async () => {
+  const status = el('aiCharsStatus');
+  const apiKey = el('apiKey').value.trim();
+  const seriesTitle = el('seriesName').value.trim();
+  const model = getAiFillModel();
+
+  status.className = 'status';
+  if (!apiKey) { status.className = 'status err'; status.textContent = 'Вставь ключ OpenRouter.'; return; }
+  if (!seriesTitle) { status.className = 'status err'; status.textContent = 'Сначала впиши название сериала.'; return; }
+  if (!model) { status.className = 'status err'; status.textContent = 'Выбери модель для автозаполнения.'; return; }
+
+  status.textContent = 'Запрашиваю у модели...';
+  const template = el('aiCharsPrompt').value.trim() || DEFAULT_AI_CHARS_PROMPT;
+  const season = el('aiCharsSeason').value.trim();
+  const seasonClause = season ? `, season ${season}` : '';
+  const prompt = template.replace(/\{series\}/g, seriesTitle).replace(/\{season\}/g, seasonClause);
+
+  try {
+    const useWebSearch = el('aiWebSearch').checked;
+    const result = await askModel(model, apiKey, prompt, useWebSearch);
+    const isUnsure = /^примерно\s*:/i.test(result.trim());
+    const namesOnly = result.trim().replace(/^примерно\s*:\s*/i, '');
+    const current = el('bulkNames').value.trim();
+    el('bulkNames').value = current ? `${current}, ${namesOnly}` : namesOnly;
+    status.className = isUnsure ? 'status err' : 'status';
+    status.textContent = isUnsure
+      ? 'Модель не до конца уверена в этом списке (пометила его как примерный) — список всё равно подставлен, обязательно перепроверь имена перед добавлением.'
+      : 'Список подставлен в поле выше — проверь имена и нажми «Добавить всех».';
+  } catch (e) {
+    status.className = 'status err';
+    status.textContent = `Ошибка: ${e.message}`;
+  }
+});
+
 el('fullFilePrompt').value = DEFAULT_FULL_FILE_PROMPT;
+el('aiCharsPrompt').value = DEFAULT_AI_CHARS_PROMPT;
 
 let currentFingerprint = null;
 
