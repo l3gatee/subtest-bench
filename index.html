@@ -445,11 +445,11 @@
     <div class="row" style="margin-top:12px;">
       <div>
         <label>Целевой размер пачки (реплик)</label>
-        <input type="text" id="batchSize" value="50">
+        <input type="text" id="batchSize" value="90">
       </div>
       <div>
         <label>Хвост контекста (реплик из прошлой пачки)</label>
-        <input type="text" id="tailSize" value="10">
+        <input type="text" id="tailSize" value="18">
       </div>
       <div>
         <label>Порог паузы для разреза (мс)</label>
@@ -545,6 +545,7 @@ async function loadCatalog(){
       name: m.name || m.id,
       inCost: parseFloat(m.pricing?.prompt || '0') * 1e6,
       outCost: parseFloat(m.pricing?.completion || '0') * 1e6,
+      maxOutput: m.top_provider?.max_completion_tokens || null,
     })).sort((a, b) => a.name.localeCompare(b.name));
 
     DEFAULT_MODEL_IDS.forEach(id => {
@@ -847,6 +848,12 @@ function buildContextPromptSection(tgt){
 
 /* ---------- translation ---------- */
 
+function computeMaxTokens(model, lineCount){
+  const estimate = Math.round(lineCount * 60) + 500; // ~60 tokens/line headroom + fixed overhead
+  const cap = model.maxOutput && model.maxOutput > 0 ? model.maxOutput : 16000;
+  return Math.max(1024, Math.min(estimate, cap));
+}
+
 async function askModel(model, apiKey, prompt, useWebSearch){
   const modelId = useWebSearch ? `${model.id}:online` : model.id;
   const resp = await fetch('https://openrouter.ai/api/v1/chat/completions', {
@@ -890,6 +897,7 @@ async function translateWithModel(model, lines, src, tgt, apiKey, contextSection
         { role: 'user', content: numbered }
       ],
       temperature: 0.3,
+      max_tokens: computeMaxTokens(model, lines.length),
     })
   });
 
@@ -1028,6 +1036,7 @@ async function translateBatchForFullFile(model, texts, src, tgt, apiKey, basePro
         { role: 'user', content: numbered }
       ],
       temperature: 0.3,
+      max_tokens: computeMaxTokens(model, texts.length),
     })
   });
 
