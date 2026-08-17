@@ -487,6 +487,38 @@
     </div>
   </div>
 
+  <div class="panel" style="margin-top:24px;">
+    <div class="panel-title">Дозаполнить пропущенные строки в уже переведённом файле</div>
+    <div class="hint" style="margin-top:0;">Загружаешь файл, в котором часть реплик уже переведена, а часть по какой-то причине осталась на языке оригинала (модель иногда пропускает строки в ответе). Программа пытается сама отметить непереведённые реплики галочкой — отметки можно и нужно поправить руками, потом переводятся только отмеченные.</div>
+
+    <div class="row" style="margin-top:14px;">
+      <div>
+        <label>Файл .srt с пропусками</label>
+        <input type="file" id="fixFileInput" accept=".srt,.vtt">
+        <div class="file-info" id="fixFileInfo"></div>
+      </div>
+      <div>
+        <label>Модель для перевода</label>
+        <select id="fixModel"><option value="">— сначала выбери модель(и) выше —</option></select>
+      </div>
+    </div>
+    <div class="warn" id="fixDetectionWarn" style="display:none;">Автоматическое определение непереведённых строк надёжно работает только когда язык перевода использует другой алфавит, чем оригинал (например, английский → русский). Для пары языков с одинаковым алфавитом (например, английский → испанский) галочки нужно расставить вручную.</div>
+
+    <button id="fixTranslateBtn" style="margin-top:16px;" disabled>Перевести отмеченные</button>
+    <div class="status" id="fixStatus"></div>
+
+    <div id="fixTableWrap" style="display:none; margin-top:18px;">
+      <div class="screen-head" style="border-radius:10px 10px 0 0; border:1px solid var(--line); border-bottom:none;">
+        <span>галочка = будет переведено · текст редактируемый</span>
+        <span id="fixTableCount"></span>
+      </div>
+      <div style="max-height:520px; overflow-y:auto; border:1px solid var(--line); border-radius:0 0 10px 10px;">
+        <div id="fixTableBody"></div>
+      </div>
+      <button id="saveFixBtn" style="margin-top:14px;">Сохранить .srt</button>
+    </div>
+  </div>
+
 </div>
 
 <script>
@@ -631,7 +663,9 @@ function renderSelected(){
 function updateFullFileModelSelect(){
   populateModelSelect(el('fullFileModel'));
   populateModelSelect(el('aiFillModel'));
+  populateModelSelect(el('fixModel'));
   checkTranslateFileBtn();
+  checkFixBtn();
 }
 
 function populateModelSelect(sel){
@@ -1232,20 +1266,150 @@ function renderSrtTable(cues, lines){
   });
 }
 
-function updateSrtTableCell(i, value){
-  const input = document.getElementById(`srtTrans-${i}`);
+function updateCellValue(prefix, i, value){
+  const input = document.getElementById(`${prefix}-${i}`);
   if (!input) return;
   input.value = value || '';
   input.classList.toggle('pending', !value);
 }
 
-function readSrtTableValues(count){
+function updateSrtTableCell(i, value){
+  updateCellValue('srtTrans', i, value);
+}
+
+function readCellValues(prefix, count){
   const values = [];
   for (let i = 0; i < count; i++) {
-    const input = document.getElementById(`srtTrans-${i}`);
+    const input = document.getElementById(`${prefix}-${i}`);
     values.push(input ? input.value : '');
   }
   return values;
+}
+
+function readSrtTableValues(count){
+  return readCellValues('srtTrans', count);
+}
+
+/* ---------- fix already-translated files with gaps ---------- */
+
+let fixCues = null;
+let fixFileBaseName = '';
+
+const SCRIPT_TESTERS = {
+  'russian': /[\u0400-\u04FF]/, 'ukrainian': /[\u0400-\u04FF]/, 'bulgarian': /[\u0400-\u04FF]/, 'serbian': /[\u0400-\u04FF]/,
+  'japanese': /[\u3040-\u30FF\u4E00-\u9FFF]/,
+  'korean': /[\uAC00-\uD7AF]/,
+  'chinese': /[\u4E00-\u9FFF]/,
+  'arabic': /[\u0600-\u06FF]/,
+  'hindi': /[\u0900-\u097F]/,
+  'greek': /[\u0370-\u03FF]/,
+};
+
+function getScriptTester(tgtLang){
+  return SCRIPT_TESTERS[tgtLang.trim().toLowerCase()] || null;
+}
+
+function looksUntranslated(text, tester){
+  if (!tester) return false;
+  return !tester.test(text);
+}
+
+function renderFixTable(cues){
+  const box = el('fixTableBody');
+  box.innerHTML = '';
+  el('fixTableWrap').style.display = 'block';
+  el('fixTableCount').textContent = `${cues.length} реплик`;
+
+  const tgt = el('tgtLang').value.trim() || 'Russian';
+  const tester = getScriptTester(tgt);
+  el('fixDetectionWarn').style.display = tester ? 'none' : 'block';
+
+  cues.forEach((c, i) => {
+    const row = document.createElement('div');
+    row.className = 'srt-row';
+    const text = c.textLines.join(' ');
+    const flagged = looksUntranslated(text, tester);
+    row.innerHTML = `
+      <div class="srt-time" style="width:44px; justify-content:center;"><input type="checkbox" id="fixCheck-${i}" ${flagged ? 'checked' : ''}></div>
+      <div class="srt-time">${escapeHtml(c.time)}</div>
+      <input type="text" class="srt-trans${flagged ? ' pending' : ''}" id="fixTrans-${i}" value="${escapeAttr(text)}">
+    `;
+    box.appendChild(row);
+  });
+}
+
+function checkFixBtn(){
+  const btn = el('fixTranslateBtn');
+  const hasModel = el('fixModel').value;
+  btn.disabled = !(fixCues && fixCues.length && hasModel);
+}
+
+async function translateFixSelected(){
+  const apiKey = el('apiKey').value.trim();
+  const src = el('srcLang').value.trim() || 'English';
+  const tgt = el('tgtLang').value.trim() || 'Russian';
+  const basePrompt = el('fullFilePrompt').value.trim() || DEFAULT_FULL_FILE_PROMPT;
+  const modelId = el('fixModel').value;
+  const model = SELECTED.find(m => m.id === modelId);
+  const status = el('fixStatus');
+  const btn = el('fixTranslateBtn');
+  const mode = currentMode();
+
+  status.className = 'status';
+  if (!apiKey) { status.className = 'status err'; status.textContent = 'Вставь ключ OpenRouter.'; return; }
+  if (!model) { status.className = 'status err'; status.textContent = 'Выбери модель.'; return; }
+  if (!fixCues || !fixCues.length) { status.className = 'status err'; status.textContent = 'Сначала загрузи файл.'; return; }
+
+  const checkedIdxs = [];
+  fixCues.forEach((c, i) => {
+    const cb = document.getElementById(`fixCheck-${i}`);
+    if (cb && cb.checked) checkedIdxs.push(i);
+  });
+  if (checkedIdxs.length === 0) {
+    status.className = 'status err';
+    status.textContent = 'Не отмечено ни одной строки для перевода.';
+    return;
+  }
+
+  const contextSection = (mode === 'series' && seriesContext) ? buildContextPromptSection(tgt) : '';
+
+  btn.disabled = true;
+  status.textContent = `Перевожу ${checkedIdxs.length} отмеченных реплик...`;
+
+  const chunkSize = 30;
+  let translatedCount = 0;
+
+  for (let i = 0; i < checkedIdxs.length; i += chunkSize) {
+    const idxChunk = checkedIdxs.slice(i, i + chunkSize);
+    const texts = idxChunk.map(idx => document.getElementById(`fixTrans-${idx}`).value);
+
+    // light context: a line just before the first index in this chunk, whatever its current text is
+    const beforeIdx = idxChunk[0] - 1;
+    const tailPairs = [];
+    if (beforeIdx >= 0) {
+      const beforeText = document.getElementById(`fixTrans-${beforeIdx}`).value;
+      tailPairs.push({ orig: beforeText, translated: beforeText });
+    }
+
+    try {
+      const { lines: translated } = await translateBatchForFullFile(model, texts, src, tgt, apiKey, basePrompt, contextSection, tailPairs);
+      idxChunk.forEach((idx, j) => {
+        const t = translated[j] || texts[j];
+        updateCellValue('fixTrans', idx, t);
+        translatedCount++;
+      });
+      status.textContent = `Переведено ${translatedCount} из ${checkedIdxs.length}...`;
+    } catch (e) {
+      status.className = 'status err';
+      status.textContent = `Остановлено на ошибке: ${e.message}. Переведено ${translatedCount} из ${checkedIdxs.length} — остальное можно допереводить повторным запуском.`;
+      btn.disabled = false;
+      return;
+    }
+  }
+
+  status.className = 'status';
+  status.textContent = `Готово: переведено ${translatedCount} реплик. Проверь таблицу и нажми «Сохранить .srt».`;
+  btn.disabled = false;
 }
 
 let cachedUsdRubRate = null;
@@ -1736,6 +1900,52 @@ el('saveSrtBtn').addEventListener('click', async () => {
     });
     await saveSeriesContext(false);
   }
+});
+
+el('fixFileInput').addEventListener('change', async (e) => {
+  const file = e.target.files[0];
+  const info = el('fixFileInfo');
+  if (!file) return;
+  fixFileBaseName = file.name.replace(/\.(srt|vtt)$/i, '').replace(/\.[a-z]{2}$/i, '');
+  el('fixTableWrap').style.display = 'none';
+
+  try {
+    const text = await file.text();
+    fixCues = parseSrtFile(text);
+    if (fixCues.length === 0) {
+      info.style.color = 'var(--err)';
+      info.textContent = 'Не нашёл реплик с таймингами в этом файле — проверь формат.';
+    } else {
+      const tgt = el('tgtLang').value.trim() || 'Russian';
+      const tester = getScriptTester(tgt);
+      const flaggedCount = tester ? fixCues.filter(c => looksUntranslated(c.textLines.join(' '), tester)).length : 0;
+      info.style.color = 'var(--accent-ink)';
+      info.textContent = tester
+        ? `${file.name} — ${fixCues.length} реплик, похоже непереведённых: ${flaggedCount}.`
+        : `${file.name} — ${fixCues.length} реплик. Автоопределение недоступно для этой пары языков — отметь строки вручную.`;
+      renderFixTable(fixCues);
+    }
+  } catch (err) {
+    fixCues = null;
+    info.style.color = 'var(--err)';
+    info.textContent = `Не удалось прочитать файл: ${err.message}`;
+  }
+  checkFixBtn();
+});
+
+el('fixModel').addEventListener('change', checkFixBtn);
+el('fixTranslateBtn').addEventListener('click', translateFixSelected);
+
+el('saveFixBtn').addEventListener('click', async () => {
+  const status = el('fixStatus');
+  if (!fixCues || !fixCues.length) return;
+  const tgt = el('tgtLang').value.trim() || 'Russian';
+  const values = readCellValues('fixTrans', fixCues.length);
+  const srtText = buildSrtOutput(fixCues, values);
+  const filename = `${fixFileBaseName}.fixed.${tgt.toLowerCase().slice(0,2)}.srt`;
+  const result = await saveOrDownloadSrt(filename, srtText);
+  status.className = 'status';
+  status.textContent = `Сохранено: ${filename} → ${result.savedTo}.`;
 });
 </script>
 </body>
