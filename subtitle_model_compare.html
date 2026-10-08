@@ -1,0 +1,2182 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Sub Test Bench — сравнение моделей перевода субтитров через OpenRouter</title>
+<meta name="description" content="Живое сравнение любых моделей OpenRouter по качеству и стоимости перевода субтитров, с сохранением контекста сериала (глоссарий, персонажи) локально на компьютере.">
+<meta property="og:title" content="Sub Test Bench — сравнение моделей перевода субтитров">
+<meta property="og:description" content="Сравни, как разные модели с OpenRouter переводят одни и те же субтитры, и сколько это будет стоить на весь эпизод.">
+<meta property="og:type" content="website">
+<meta name="twitter:card" content="summary">
+<meta name="google-site-verification" content="7lCTjjVVkn99LqaRKNdGYzfFgMB16jaBGHdgeic7RMk" />
+<style>
+  :root{
+    --bg: #FAF8F3;
+    --panel: #FFFFFF;
+    --panel-2: #F2EFE6;
+    --line: #E4DFD1;
+    --text: #211F1A;
+    --dim: #837C6C;
+    --sub-yellow: #B5451B;      /* kept as variable name for compat; now the terracotta accent */
+    --accent: #B5451B;
+    --accent-ink: #7A2E10;
+    --accent-soft: #F2DED2;
+    --accent-2: #2F6F62;
+    --accent-dim: #D9B8A6;
+    --warn: #92600B;
+    --err: #B3261E;
+    --mono: ui-monospace, 'SF Mono', 'JetBrains Mono', Menlo, Consolas, monospace;
+    --sans: -apple-system, 'Segoe UI', Inter, sans-serif;
+    --serif: Georgia, 'Iowan Old Style', 'Palatino Linotype', 'Times New Roman', serif;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0; padding:0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--sans);
+    min-height:100vh;
+  }
+  .wrap{max-width:1200px; margin:0 auto; padding:36px 20px 70px;}
+
+  .header{
+    display:flex; align-items:flex-end; justify-content:space-between;
+    border-bottom:2px solid var(--text); padding-bottom:18px; margin-bottom:30px;
+    flex-wrap:wrap; gap:8px;
+  }
+  .header h1{
+    font-family: var(--serif); font-size:30px; font-weight:500; margin:0;
+    letter-spacing:-0.3px; color:var(--text);
+  }
+  .header h1 span{color:var(--accent); font-style:italic;}
+  .header .tag{font-family:var(--mono); font-size:11px; color:var(--dim); letter-spacing:1px; padding-bottom:4px;}
+
+  .panel{
+    background: var(--panel);
+    border:1px solid var(--line);
+    border-radius:14px;
+    padding:22px 24px;
+    margin-bottom:20px;
+    box-shadow: 0 1px 2px rgba(33,31,26,0.03);
+  }
+  .panel-title{
+    font-family:var(--mono); font-size:10.5px; color:var(--dim);
+    letter-spacing:1.6px; text-transform:uppercase; margin-bottom:14px;
+    display:flex; justify-content:space-between; align-items:center;
+  }
+
+  label{display:block; font-size:12px; color:var(--dim); margin-bottom:6px; font-family:var(--mono);}
+  input[type=text], input[type=password], textarea, select{
+    width:100%; background:var(--panel-2); border:1px solid var(--line);
+    color:var(--text); border-radius:8px; padding:10px 12px;
+    font-family:var(--mono); font-size:13px; resize:vertical;
+  }
+  input[type=text]:focus, input[type=password]:focus, textarea:focus{
+    outline:none; border-color:var(--accent); background:var(--panel);
+    box-shadow: 0 0 0 3px var(--accent-soft);
+  }
+  .row{display:flex; gap:14px; flex-wrap:wrap;}
+  .row > div{flex:1; min-width:200px;}
+  .hint{font-size:11.5px; color:var(--dim); margin-top:6px; line-height:1.55;}
+  .warn{font-size:11.5px; color:var(--warn); margin-top:6px; line-height:1.55;}
+
+  /* mode toggle */
+  .radio-chip{display:inline-flex; align-items:center; gap:8px; font-family:var(--mono); font-size:12px; margin-right:20px; cursor:pointer; color:var(--text);}
+  .radio-chip input{width:auto; margin:0; accent-color: var(--accent);}
+  .folder-status{font-family:var(--mono); font-size:12px; color:var(--dim);}
+
+  /* context editor tables */
+  .ctx-table{display:flex; flex-direction:column; gap:8px;}
+  .ctx-row{display:flex; gap:8px; align-items:center;}
+  .ctx-row input, .ctx-row select{flex:1; min-width:0;}
+  .ctx-row button{
+    flex-shrink:0; padding:9px 12px; background:transparent; border:1px solid var(--line);
+    color:var(--dim); font-size:13px; font-family:var(--mono); border-radius:8px;
+  }
+  .ctx-row button:hover{color:var(--err); border-color:var(--err);}
+
+  /* selected model chips */
+  .selected-chips{display:flex; gap:8px; flex-wrap:wrap; margin-bottom:12px; min-height:34px;}
+  .sel-chip{
+    display:flex; align-items:center; gap:8px;
+    background:var(--accent-soft); border:1px solid var(--accent-dim); border-radius:20px;
+    padding:6px 8px 6px 14px; font-family:var(--mono); font-size:12px; color:var(--accent-ink);
+  }
+  .sel-chip button{
+    background:transparent; border:none; color:var(--accent-ink); opacity:0.6; font-size:14px;
+    padding:0 6px; cursor:pointer; line-height:1; border-radius:50%;
+  }
+  .sel-chip button:hover{color:var(--err); opacity:1;}
+  .sel-chip .price{color:var(--accent-ink); opacity:0.65; font-size:10px;}
+  .empty-note{font-family:var(--mono); font-size:12px; color:var(--dim); padding:6px 0;}
+
+  /* model picker */
+  .picker{position:relative;}
+  .picker-results{
+    margin-top:8px; max-height:280px; overflow-y:auto;
+    border:1px solid var(--line); border-radius:10px; background:var(--panel);
+  }
+  .picker-row{
+    display:flex; justify-content:space-between; align-items:center;
+    padding:9px 14px; border-bottom:1px solid var(--line);
+    cursor:pointer; font-family:var(--mono); font-size:12px;
+  }
+  .picker-row:last-child{border-bottom:none;}
+  .picker-row:hover{background:var(--panel-2);}
+  .picker-row.added{opacity:0.4; cursor:default;}
+  .picker-row .id{color:var(--text);}
+  .picker-row .price{color:var(--dim); font-size:10px; white-space:nowrap; margin-left:12px;}
+  .picker-loading, .picker-empty{padding:14px; font-family:var(--mono); font-size:12px; color:var(--dim);}
+
+  .models-count{font-family:var(--mono); font-size:10px; color:var(--dim); font-weight:normal; text-transform:none; letter-spacing:0;}
+
+  button{
+    background: var(--accent); color:#FFF6EF; border:none;
+    font-family:var(--mono); font-weight:600; font-size:13px;
+    padding:12px 22px; border-radius:8px; cursor:pointer;
+    letter-spacing:0.3px;
+    box-shadow: 0 1px 2px rgba(122,46,16,0.15);
+  }
+  button:hover{background:var(--accent-ink);}
+  button:disabled{background:var(--line); color:var(--dim); box-shadow:none; cursor:not-allowed;}
+  button.secondary{
+    background:transparent; color:var(--accent-ink); border:1px solid var(--accent-dim);
+    font-weight:600; padding:10px 16px; box-shadow:none;
+  }
+  button.secondary:hover{background:var(--accent-soft);}
+
+  .status{font-family:var(--mono); font-size:12px; color:var(--dim); margin-top:10px; min-height:16px;}
+  .status.err{color:var(--err);}
+
+  .screen{
+    background:var(--panel); border-radius:14px; border:1px solid var(--line);
+    padding:0; overflow-x:auto; margin-top:6px;
+    box-shadow: 0 1px 2px rgba(33,31,26,0.03);
+  }
+  .screen-head{
+    display:flex; justify-content:space-between; align-items:center;
+    padding:11px 16px; border-bottom:1px solid var(--line); background:var(--panel-2);
+    font-family:var(--mono); font-size:11px; color:var(--dim);
+  }
+  .model-col-heads{display:flex; min-width:max-content;}
+  .model-col-head{width:220px; flex-shrink:0; text-align:center; padding:12px; font-family:var(--mono); font-size:12px; color:var(--accent-ink); border-left:1px solid var(--line);}
+  .model-col-head .cost{display:block; color:var(--dim); font-size:10px; margin-top:3px;}
+
+  .cue{
+    display:flex; border-bottom:1px solid var(--line);
+    min-height:60px; min-width:max-content;
+  }
+  .cue:last-child{border-bottom:none;}
+  .cue-num{
+    width:64px; flex-shrink:0; display:flex; align-items:center; justify-content:center;
+    font-family:var(--mono); font-size:11px; color:var(--dim); background:var(--panel-2);
+    border-right:1px solid var(--line);
+  }
+  .cue-src{
+    width:220px; flex-shrink:0; display:flex; align-items:center;
+    padding:10px 14px; font-size:13px; color:var(--text); background:var(--panel-2);
+    border-right:1px solid var(--line); line-height:1.4;
+  }
+  .cue-col{
+    width:220px; flex-shrink:0; display:flex; align-items:center; justify-content:center;
+    padding:10px 16px; border-left:1px solid var(--line);
+  }
+  .cap{
+    color: var(--accent-ink);
+    font-size:14px; line-height:1.45; text-align:center;
+    font-family:var(--sans);
+  }
+  .cap.pending{color:var(--dim); font-style:italic; font-size:12px;}
+  .cap.error{color:var(--err); font-size:11px; font-family:var(--mono);}
+
+  .summary{
+    display:flex; gap:16px; flex-wrap:wrap; margin-top:18px;
+  }
+  .sum-card{
+    flex:1; min-width:200px; background:var(--panel); border:1px solid var(--line);
+    border-radius:14px; padding:16px 18px;
+    box-shadow: 0 1px 2px rgba(33,31,26,0.03);
+  }
+  .sum-card h3{font-family:var(--mono); font-size:12px; color:var(--accent-ink); margin:0 0 10px; letter-spacing:0.5px;}
+  .sum-line{display:flex; justify-content:space-between; font-size:12px; color:var(--dim); margin-bottom:6px; font-family:var(--mono);}
+  .sum-line b{color:var(--text); font-weight:600;}
+  .sum-line .ep{color:var(--accent);}
+
+  /* full file translation */
+  input[type=file]{
+    width:100%; background:var(--panel-2); border:1px dashed var(--line);
+    color:var(--dim); border-radius:8px; padding:14px 12px;
+    font-family:var(--mono); font-size:12px; cursor:pointer;
+  }
+  .file-info{font-family:var(--mono); font-size:12px; color:var(--accent-ink); margin-top:8px; min-height:16px;}
+  .progress-wrap{
+    background:var(--panel-2); border:1px solid var(--line); border-radius:20px;
+    height:10px; overflow:hidden; margin-top:14px; display:none;
+  }
+  .progress-bar{
+    height:100%; background:var(--accent); width:0%;
+    transition: width 0.3s ease;
+  }
+  .progress-label{font-family:var(--mono); font-size:11px; color:var(--dim); margin-top:6px;}
+
+  .srt-row{display:flex; border-bottom:1px solid var(--line); align-items:stretch;}
+  .srt-row:last-child{border-bottom:none;}
+  .srt-time{
+    width:130px; flex-shrink:0; display:flex; align-items:center;
+    font-family:var(--mono); font-size:10px; color:var(--dim); padding:8px 10px;
+    background:var(--panel-2); border-right:1px solid var(--line); line-height:1.4;
+  }
+  .srt-orig{
+    flex:1; padding:8px 12px; font-size:12px; color:var(--text); display:flex; align-items:center;
+    border-right:1px solid var(--line); line-height:1.4; background:var(--panel-2);
+  }
+  .srt-trans{
+    flex:1; background:var(--panel); border:none; color:var(--accent-ink);
+    font-family:var(--sans); font-size:13px; padding:8px 12px;
+  }
+  .srt-trans:focus{outline:2px solid var(--accent); outline-offset:-2px;}
+  .srt-trans.pending{color:var(--dim); font-style:italic;}
+
+  ::placeholder{color:#B4AD9C;}
+
+  body.dark-theme{
+    --bg: #0a0a0c;
+    --panel: #131316;
+    --panel-2: #1a1a1e;
+    --line: #2a2a30;
+    --text: #ececea;
+    --dim: #86868f;
+    --accent: #F2B155;
+    --accent-ink: #F2B155;
+    --accent-soft: #3A2E17;
+    --accent-2: #5fc7bd;
+    --accent-dim: #6B5326;
+    --warn: #E4AF57;
+    --err: #FF6B6B;
+  }
+  body.dark-theme ::placeholder{color:#54545c;}
+  body.dark-theme .panel,
+  body.dark-theme .screen,
+  body.dark-theme .sum-card{ box-shadow: 0 1px 3px rgba(0,0,0,0.4); }
+  body.dark-theme button:not(.secondary){ box-shadow: 0 1px 3px rgba(0,0,0,0.5); }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="header">
+    <h1>SUB<span>TEST</span>_BENCH</h1>
+    <div style="display:flex; align-items:center; gap:14px;">
+      <div class="tag">// сравнение любых моделей OpenRouter вживую</div>
+      <button type="button" id="themeToggleBtn" class="secondary" style="padding:7px 12px; font-size:11px;">🌙 Тёмная тема</button>
+    </div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-title">Ключ OpenRouter</div>
+    <input type="password" id="apiKey" placeholder="sk-or-v1-..." autocomplete="off">
+    <div class="hint">Ключ используется только в этой вкладке для прямых запросов к openrouter.ai из браузера и нигде не сохраняется — при обновлении страницы его нужно будет ввести заново.</div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-title">Режим перевода</div>
+    <label class="radio-chip"><input type="radio" name="mode" value="single" checked> Разовый перевод</label>
+    <label class="radio-chip"><input type="radio" name="mode" value="series"> Перевод сериала (с памятью контекста)</label>
+
+    <div id="seriesPanel" style="display:none; margin-top:16px;">
+      <div class="hint" style="margin-top:0;">Контекст сериала (персонажи, словарь терминов, заметки о стиле) хранится в файле <code>subtest-context.json</code> прямо в выбранной папке на твоём компьютере — не на сервере. Открой для каждого сериала свою папку, и при следующем эпизоде программа сама подхватит уже накопленный контекст.</div>
+
+      <div style="display:flex; gap:10px; align-items:center; margin-top:12px; flex-wrap:wrap;">
+        <button type="button" id="selectFolderBtn" class="secondary">Выбрать / создать папку сериала</button>
+        <span class="folder-status" id="folderStatus">Папка не выбрана</span>
+      </div>
+      <div class="warn" id="fsApiWarn" style="display:none;">Браузер не поддерживает выбор локальной папки — эта функция работает в Chrome и Edge на компьютере (не в Firefox/Safari, не в мобильных браузерах).</div>
+
+      <div id="contextEditor" style="display:none; margin-top:20px;">
+        <div class="row">
+          <div>
+            <label>Название сериала</label>
+            <input type="text" id="seriesName">
+          </div>
+          <div>
+            <label>Модель для автозаполнения через ИИ</label>
+            <input type="text" id="aiFillModel" list="modelDatalist" placeholder="deepseek, gemini, claude…" autocomplete="off">
+            <div class="hint" id="aiFillModelPrice"></div>
+          </div>
+        </div>
+        <label class="radio-chip" style="margin-top:10px;"><input type="checkbox" id="aiWebSearch" checked> Искать в интернете (точнее для персонажей/сюжета, чуть дороже за запрос)</label>
+        <div class="warn" style="margin-top:8px;">Модель отвечает по своим знаниям (плюс веб-поиск, если включён выше) и может путать или выдумывать детали, особенно для менее известных сериалов — результат всегда проверяй перед сохранением, это черновик, а не факт.</div>
+
+        <div style="margin-top:20px; padding-top:16px; border-top:1px solid var(--line);">
+          <div class="panel-title" style="margin-bottom:8px;"><span>Персонажи</span></div>
+          <label>Быстрое добавление (через запятую или каждое имя с новой строки)</label>
+          <textarea id="bulkNames" rows="2" placeholder="Anna, Marcus, Jin..."></textarea>
+
+          <div class="row" style="margin-top:10px;">
+            <div>
+              <label>Сезон (необязательно)</label>
+              <input type="text" id="aiCharsSeason" placeholder="например: 2">
+            </div>
+          </div>
+          <label style="margin-top:10px;">Промпт для поиска персонажей (можно менять — {series} и {season} подставляются автоматически)</label>
+          <textarea id="aiCharsPrompt" rows="4"></textarea>
+
+          <div style="display:flex; gap:10px; margin-top:8px; flex-wrap:wrap;">
+            <button type="button" id="bulkAddBtn" class="secondary" style="padding:8px 14px; font-size:12px;">Добавить всех</button>
+            <button type="button" id="aiCharsBtn" class="secondary" style="padding:8px 14px; font-size:12px;">Найти персонажей через ИИ</button>
+          </div>
+          <div class="status" id="aiCharsStatus"></div>
+          <div id="charTable" class="ctx-table" style="margin-top:14px;"></div>
+          <button type="button" id="addCharBtn" class="secondary" style="margin-top:8px; padding:8px 14px; font-size:12px;">+ Персонаж</button>
+        </div>
+
+        <div style="margin-top:22px;">
+          <div class="panel-title" style="margin-bottom:8px;"><span>Словарь терминов</span></div>
+          <div id="glossTable" class="ctx-table"></div>
+          <button type="button" id="addGlossBtn" class="secondary" style="margin-top:8px; padding:8px 14px; font-size:12px;">+ Термин</button>
+        </div>
+
+        <div style="margin-top:22px;">
+          <label>Заметки о стиле / тоне сериала</label>
+          <textarea id="styleNotes" rows="3" placeholder="Например: тёмная комедия, много чёрного юмора, персонажи обращаются друг к другу на «ты»..."></textarea>
+          <button type="button" id="aiStyleBtn" class="secondary" style="margin-top:8px; padding:8px 14px; font-size:12px;">Заполнить с помощью ИИ</button>
+          <div class="status" id="aiStyleStatus"></div>
+        </div>
+
+        <button type="button" id="saveContextBtn" style="margin-top:16px;">Сохранить контекст</button>
+        <span class="status" id="contextStatus" style="display:inline-block; margin-left:12px;"></span>
+      </div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-title">
+      <span>Модели для сравнения</span>
+      <span class="models-count"><span id="selCount"></span><button type="button" id="refreshPricesBtn" class="secondary" style="padding:4px 10px; font-size:11px; margin-left:10px;">Обновить цены</button></span>
+    </div>
+    <div class="hint" id="priceStamp" style="margin:0 0 12px;">Цены загружаются…</div>
+    <div class="selected-chips" id="selectedChips"></div>
+
+    <div class="picker">
+      <input type="text" id="modelSearch" placeholder="Поиск по каталогу OpenRouter — mistral, deepseek, gemini, claude...">
+      <div class="picker-results" id="pickerResults"></div>
+    </div>
+    <datalist id="modelDatalist"></datalist>
+    <div class="warn" id="manyWarn" style="display:none;">Много моделей одновременно — каждая новая добавляет ещё один параллельный запрос и свой расход по ключу. Работает, но проверь, что готов оплатить все сразу.</div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-title">Реплики для теста (по одной на строку)</div>
+    <textarea id="lines" rows="8" spellcheck="false"></textarea>
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-top:8px;">
+      <div class="hint" style="margin-top:0;">Можно вставить .srt как есть — номера реплик и тайминги (00:00:11,761 --> 00:00:13,971) уберутся сами при вставке.</div>
+      <button class="secondary" id="cleanBtn" type="button" style="flex-shrink:0; margin-left:12px;">Убрать тайминги вручную</button>
+    </div>
+    <div class="row" style="margin-top:12px;">
+      <div>
+        <label>Язык оригинала</label>
+        <div style="display:flex; gap:8px; align-items:center;">
+          <input type="text" id="srcLang" list="langList" value="English">
+          <button type="button" id="swapLangBtn" class="secondary" style="padding:10px 12px; flex-shrink:0;" title="Поменять местами">⇄</button>
+        </div>
+      </div>
+      <div>
+        <label>Язык перевода</label>
+        <input type="text" id="tgtLang" list="langList" value="Russian">
+      </div>
+      <datalist id="langList">
+        <option value="Russian">
+        <option value="English">
+        <option value="Spanish">
+        <option value="German">
+        <option value="French">
+        <option value="Italian">
+        <option value="Portuguese">
+        <option value="Chinese">
+        <option value="Japanese">
+        <option value="Korean">
+        <option value="Turkish">
+        <option value="Arabic">
+        <option value="Hindi">
+        <option value="Polish">
+        <option value="Ukrainian">
+        <option value="Dutch">
+      </datalist>
+      <div>
+        <label>Реплик в серии (для пересчёта стоимости)</label>
+        <input type="text" id="epSize" value="900">
+      </div>
+    </div>
+    <div class="hint">Тест гоняет только эти строки живьём через каждую модель, а стоимость эпизода — экстраполяция по фактическому расходу токенов на строку.</div>
+  </div>
+
+  <button id="runBtn">Перевести и сравнить</button>
+  <button class="secondary" id="resetBtn" style="margin-left:10px;">Сбросить пример</button>
+  <div class="status" id="status"></div>
+
+  <div class="screen" id="screen" style="display:none;">
+    <div class="screen-head">
+      <span>субтитры · построчное сравнение</span>
+      <span id="lineCount"></span>
+    </div>
+    <div style="overflow-x:auto;">
+      <div id="colHeads" class="model-col-heads"></div>
+      <div id="cues"></div>
+    </div>
+  </div>
+
+  <div class="summary" id="summary" style="display:none;"></div>
+
+  <div class="panel" style="margin-top:24px;">
+    <div class="panel-title">Перевод всего эпизода (.srt) с сохранением таймингов</div>
+    <div class="hint" style="margin-top:0;">Загружаешь целый .srt файл, программа переводит его пачками через одну выбранную модель, сохраняя оригинальные номера и тайминги. Если что-то оборвётся на середине — прогресс сохраняется, и при повторной загрузке того же файла перевод продолжится с места остановки, а не с начала.</div>
+
+    <div class="row" style="margin-top:14px;">
+      <div>
+        <label>Файл .srt</label>
+        <input type="file" id="srtFileInput" accept=".srt,.vtt">
+        <div class="file-info" id="fileInfo"></div>
+      </div>
+      <div>
+        <label>Модель для перевода</label>
+        <input type="text" id="fullFileModel" list="modelDatalist" placeholder="любая модель из каталога OpenRouter…" autocomplete="off">
+        <div class="hint" id="fullFileModelPrice"></div>
+      </div>
+    </div>
+
+    <div class="warn" id="resumeInfo" style="display:none;"></div>
+
+    <div class="row" style="margin-top:12px;">
+      <div>
+        <label>Целевой размер пачки (реплик)</label>
+        <input type="text" id="batchSize" value="90">
+      </div>
+      <div>
+        <label>Хвост контекста (реплик из прошлой пачки)</label>
+        <input type="text" id="tailSize" value="18">
+      </div>
+      <div>
+        <label>Порог паузы для разреза (мс)</label>
+        <input type="text" id="pauseMs" value="1200">
+      </div>
+    </div>
+    <div class="hint">Пачка режется не строго по числу реплик, а по ближайшей паузе в диалоге (тишина между репликами дольше указанного порога) рядом с целевым размером — так разговор не обрывается посередине. Если подходящей паузы долго нет, пачка всё равно принудительно закрывается на ~1.6× от целевого размера, чтобы не упереться в лимит вывода модели.</div>
+
+    <div style="margin-top:14px;">
+      <label>Промпт перевода (можно менять, контекст сериала добавляется к нему автоматически)</label>
+      <textarea id="fullFilePrompt" rows="4"></textarea>
+    </div>
+
+    <div style="display:flex; gap:10px; margin-top:16px; flex-wrap:wrap;">
+      <button id="translateFileBtn" disabled>Перевести файл</button>
+      <button class="secondary" id="stopFileBtn" style="display:none;">Остановить</button>
+      <button class="secondary" id="clearProgressBtn" style="display:none;">Забыть сохранённый прогресс</button>
+    </div>
+    <div class="progress-wrap" id="progressWrap"><div class="progress-bar" id="progressBar"></div></div>
+    <div class="progress-label" id="progressLabel"></div>
+    <div class="status" id="fileStatus"></div>
+
+    <div id="costSummary" class="sum-card" style="display:none; margin-top:14px; max-width:420px;"></div>
+
+    <div id="srtTableWrap" style="display:none; margin-top:18px;">
+      <div class="screen-head" style="border-radius:10px 10px 0 0; border:1px solid var(--line); border-bottom:none;">
+        <span>оригинал / перевод — можно редактировать перед сохранением</span>
+        <span id="srtTableCount"></span>
+      </div>
+      <div style="max-height:520px; overflow-y:auto; border:1px solid var(--line); border-radius:0 0 10px 10px;">
+        <div id="srtTableBody"></div>
+      </div>
+      <button id="saveSrtBtn" style="margin-top:14px;">Сохранить .srt</button>
+    </div>
+  </div>
+
+  <div class="panel" style="margin-top:24px;">
+    <div class="panel-title">Дозаполнить пропущенные строки в уже переведённом файле</div>
+    <div class="hint" style="margin-top:0;">Загружаешь файл, в котором часть реплик уже переведена, а часть по какой-то причине осталась на языке оригинала (модель иногда пропускает строки в ответе). Программа пытается сама отметить непереведённые реплики галочкой — отметки можно и нужно поправить руками, потом переводятся только отмеченные.</div>
+
+    <div class="row" style="margin-top:14px;">
+      <div>
+        <label>Файл .srt с пропусками</label>
+        <input type="file" id="fixFileInput" accept=".srt,.vtt">
+        <div class="file-info" id="fixFileInfo"></div>
+      </div>
+      <div>
+        <label>Модель для перевода</label>
+        <input type="text" id="fixModel" list="modelDatalist" placeholder="любая модель из каталога OpenRouter…" autocomplete="off">
+        <div class="hint" id="fixModelPrice"></div>
+      </div>
+    </div>
+    <div class="warn" id="fixDetectionWarn" style="display:none;">Автоматическое определение непереведённых строк надёжно работает только когда язык перевода использует другой алфавит, чем оригинал (например, английский → русский). Для пары языков с одинаковым алфавитом (например, английский → испанский) галочки нужно расставить вручную.</div>
+
+    <button id="fixTranslateBtn" style="margin-top:16px;" disabled>Перевести отмеченные</button>
+    <div class="status" id="fixStatus"></div>
+
+    <div id="fixTableWrap" style="display:none; margin-top:18px;">
+      <div class="screen-head" style="border-radius:10px 10px 0 0; border:1px solid var(--line); border-bottom:none;">
+        <span>галочка = будет переведено · текст редактируемый</span>
+        <span id="fixTableCount"></span>
+      </div>
+      <div style="max-height:520px; overflow-y:auto; border:1px solid var(--line); border-radius:0 0 10px 10px;">
+        <div id="fixTableBody"></div>
+      </div>
+      <button id="saveFixBtn" style="margin-top:14px;">Сохранить .srt</button>
+    </div>
+  </div>
+
+</div>
+
+<script>
+const DEFAULT_MODEL_IDS = [
+  'google/gemini-3.7-flash',
+  'deepseek/deepseek-v4-pro',
+  'z-ai/glm-5.2',
+];
+
+const SAMPLE_LINES = [
+  "Wait, you're telling me this was your plan the whole time?",
+  "I don't have time for this. Move.",
+  "She's not answering. Something's wrong.",
+  "You really thought I wouldn't notice?",
+  "Get down! Now!",
+  "It's not what it looks like.",
+  "We had a deal.",
+  "Don't you dare walk away from me.",
+];
+
+const CONTEXT_FILE_NAME = 'subtest-context.json';
+
+let CATALOG = [];        // full model list from OpenRouter: [{id, name, inCost, outCost}]
+let SELECTED = [];       // subset chosen by the user, same shape
+let dirHandle = null;    // FileSystemDirectoryHandle for the chosen series folder
+let seriesContext = null; // { seriesName, characters:[], glossary:[], styleNotes, history:[] }
+
+function el(id){ return document.getElementById(id); }
+
+function fmtPrice(inCost, outCost){
+  return `$${inCost.toFixed(4)} / $${outCost.toFixed(4)} за 1M`;
+}
+
+function escapeHtml(s){
+  const div = document.createElement('div');
+  div.textContent = s;
+  return div.innerHTML;
+}
+
+function escapeAttr(s){
+  return (s || '').replace(/&/g, '&amp;').replace(/"/g, '&quot;');
+}
+
+function cssId(id){ return id.replace(/[^a-zA-Z0-9]/g, '_'); }
+
+/* ---------- model catalog ---------- */
+
+const LS_SELECTED = 'subtest-selected-models';
+const LS_MODEL_PREFIX = 'subtest-model-';
+const PRICE_REFRESH_MS = 2 * 60 * 1000;
+
+const MODEL_INPUTS = [
+  { inputId: 'fullFileModel', hintId: 'fullFileModelPrice', key: 'translate' },
+  { inputId: 'fixModel', hintId: 'fixModelPrice', key: 'fix' },
+  { inputId: 'aiFillModel', hintId: 'aiFillModelPrice', key: 'aifill' },
+];
+
+let lastPriceUpdate = null;
+let priceRefreshInFlight = null;
+let selectionInitialized = false;
+
+function lsGet(key){ try { return localStorage.getItem(key); } catch (e) { return null; } }
+function lsSet(key, val){ try { localStorage.setItem(key, val); } catch (e) {} }
+
+function parseCatalogEntry(m){
+  return {
+    id: m.id,
+    name: m.name || m.id,
+    inCost: Math.max(0, parseFloat(m.pricing?.prompt || '0') * 1e6) || 0,
+    outCost: Math.max(0, parseFloat(m.pricing?.completion || '0') * 1e6) || 0,
+    maxOutput: m.top_provider?.max_completion_tokens || null,
+  };
+}
+
+async function fetchCatalogRaw(){
+  const resp = await fetch('https://openrouter.ai/api/v1/models', { cache: 'no-store' });
+  if (!resp.ok) throw new Error(resp.statusText || String(resp.status));
+  const data = await resp.json();
+  return data.data || [];
+}
+
+function resolveModel(value){
+  const v = (value || '').trim();
+  if (!v || !CATALOG.length) return null;
+  const lower = v.toLowerCase();
+  return CATALOG.find(m => m.id === v)
+      || CATALOG.find(m => m.id.toLowerCase() === lower)
+      || CATALOG.find(m => m.name.toLowerCase() === lower)
+      || null;
+}
+
+function relevantModelIds(){
+  const ids = new Set(SELECTED.map(m => m.id));
+  MODEL_INPUTS.forEach(cfg => {
+    const input = el(cfg.inputId);
+    const m = input ? resolveModel(input.value) : null;
+    if (m) ids.add(m.id);
+  });
+  return ids;
+}
+
+// Updates existing catalog entries in place (SELECTED holds references to them), adds new ones.
+function mergeCatalog(rawList){
+  const byId = new Map(CATALOG.map(m => [m.id, m]));
+  const relevant = relevantModelIds();
+  const changes = [];
+  let added = false;
+
+  rawList.forEach(raw => {
+    const fresh = parseCatalogEntry(raw);
+    const old = byId.get(fresh.id);
+    if (!old) {
+      CATALOG.push(fresh);
+      byId.set(fresh.id, fresh);
+      added = true;
+      return;
+    }
+    const priceChanged = Math.abs(old.inCost - fresh.inCost) > 1e-9 || Math.abs(old.outCost - fresh.outCost) > 1e-9;
+    if (priceChanged && relevant.has(old.id)) {
+      changes.push({ name: old.name, oldIn: old.inCost, oldOut: old.outCost, newIn: fresh.inCost, newOut: fresh.outCost });
+    }
+    old.name = fresh.name;
+    old.inCost = fresh.inCost;
+    old.outCost = fresh.outCost;
+    old.maxOutput = fresh.maxOutput;
+  });
+
+  if (added) CATALOG.sort((a, b) => a.name.localeCompare(b.name));
+  return { changes, added };
+}
+
+function rebuildModelDatalist(){
+  el('modelDatalist').innerHTML = CATALOG
+    .map(m => `<option value="${escapeAttr(m.id)}">${escapeHtml(m.name)}</option>`)
+    .join('');
+}
+
+function estimateCostUsd(model, lines){
+  // rough: ~20 input and ~24 output tokens per subtitle line
+  return (lines * 20 / 1e6) * model.inCost + (lines * 24 / 1e6) * model.outCost;
+}
+
+function refreshModelHint(cfg){
+  const input = el(cfg.inputId);
+  const hint = el(cfg.hintId);
+  if (!input || !hint) return;
+  const raw = input.value.trim();
+
+  if (!raw) {
+    hint.className = 'hint';
+    hint.textContent = 'Начни вводить название — подсказки берутся из каталога OpenRouter.';
+    return;
+  }
+  const m = resolveModel(raw);
+  if (!m) {
+    hint.className = 'warn';
+    hint.textContent = CATALOG.length ? 'Такой модели нет в каталоге — выбери вариант из подсказок.' : 'Каталог ещё загружается…';
+    return;
+  }
+
+  let text = `${m.name} · ${fmtPrice(m.inCost, m.outCost)}`;
+  if (cfg.key === 'translate') {
+    const lines = (uploadedSrtCues && uploadedSrtCues.length) ? uploadedSrtCues.length : (parseInt(el('epSize').value) || 0);
+    if (lines) {
+      const usd = estimateCostUsd(m, lines);
+      const rub = cachedUsdRubRate ? ` ≈ ${(usd * cachedUsdRubRate.rate).toFixed(2)} ₽` : '';
+      text += ` · прикидка на ${lines} реплик: $${usd.toFixed(3)}${rub}`;
+    }
+  }
+  hint.className = 'hint';
+  hint.textContent = text;
+}
+
+function refreshAllModelHints(){
+  MODEL_INPUTS.forEach(refreshModelHint);
+}
+
+function showPriceStamp(changes){
+  const stamp = el('priceStamp');
+  const t = lastPriceUpdate ? lastPriceUpdate.toLocaleTimeString('ru-RU') : '';
+  let text = `Цены с OpenRouter обновлены в ${t} — автоматически раз в 2 минуты и перед каждым переводом.`;
+  if (changes && changes.length) {
+    text += ' Изменились: ' + changes.map(c =>
+      `${c.name} $${c.oldIn.toFixed(3)}/$${c.oldOut.toFixed(3)} → $${c.newIn.toFixed(3)}/$${c.newOut.toFixed(3)}`
+    ).join('; ') + '.';
+  }
+  stamp.textContent = text;
+  stamp.style.color = (changes && changes.length) ? 'var(--warn)' : '';
+}
+
+function initSelection(){
+  selectionInitialized = true;
+
+  let ids = null;
+  const saved = lsGet(LS_SELECTED);
+  if (saved) {
+    try { const arr = JSON.parse(saved); if (Array.isArray(arr)) ids = arr; } catch (e) {}
+  }
+  if (ids === null) ids = DEFAULT_MODEL_IDS;
+
+  SELECTED = ids.map(id => CATALOG.find(m => m.id === id)).filter(Boolean);
+  if (!SELECTED.length && ids.length) {
+    SELECTED = DEFAULT_MODEL_IDS.map(id => CATALOG.find(m => m.id === id)).filter(Boolean);
+  }
+
+  MODEL_INPUTS.forEach(cfg => {
+    const input = el(cfg.inputId);
+    const savedVal = lsGet(LS_MODEL_PREFIX + cfg.key);
+    if (savedVal) input.value = savedVal;
+    if (!input.value.trim() && SELECTED.length) input.value = SELECTED[0].id;
+  });
+}
+
+async function refreshCatalogPrices(silent){
+  if (priceRefreshInFlight) return priceRefreshInFlight;
+
+  priceRefreshInFlight = (async () => {
+    const stamp = el('priceStamp');
+    if (!silent) { stamp.style.color = ''; stamp.textContent = 'Обновляю цены…'; }
+    try {
+      const raw = await fetchCatalogRaw();
+      const { changes, added } = mergeCatalog(raw);
+      lastPriceUpdate = new Date();
+      if (added) rebuildModelDatalist();
+      if (!selectionInitialized) initSelection();
+      renderSelected();
+      renderPicker(el('modelSearch').value);
+      refreshAllModelHints();
+      showPriceStamp(changes);
+      return { ok: true, changes };
+    } catch (e) {
+      stamp.style.color = 'var(--err)';
+      stamp.textContent = `Не удалось обновить цены (${e.message}) — пока действуют последние загруженные.`;
+      return { ok: false, changes: [] };
+    } finally {
+      priceRefreshInFlight = null;
+    }
+  })();
+
+  return priceRefreshInFlight;
+}
+
+async function loadCatalog(){
+  const results = el('pickerResults');
+  results.innerHTML = '<div class="picker-loading">Загружаю каталог моделей OpenRouter...</div>';
+  try {
+    const raw = await fetchCatalogRaw();
+    mergeCatalog(raw);
+    lastPriceUpdate = new Date();
+    rebuildModelDatalist();
+    initSelection();
+    renderSelected();
+    renderPicker('');
+    showPriceStamp([]);
+    refreshAllModelHints();
+    fetchUsdRubRate().then(refreshAllModelHints);
+  } catch (e) {
+    results.innerHTML = `<div class="picker-loading" style="color:var(--err)">Не удалось загрузить каталог: ${escapeHtml(e.message)}. Повторю попытку автоматически, можно и обновить страницу.</div>`;
+    el('priceStamp').textContent = 'Каталог моделей не загрузился.';
+  }
+}
+
+function renderPicker(query){
+  const results = el('pickerResults');
+  if (!CATALOG.length) return;
+  const q = query.trim().toLowerCase();
+  let matches = CATALOG;
+  if (q) {
+    matches = CATALOG.filter(m => m.id.toLowerCase().includes(q) || m.name.toLowerCase().includes(q));
+  }
+  matches = matches.slice(0, 60);
+
+  if (matches.length === 0) {
+    results.innerHTML = '<div class="picker-empty">Ничего не найдено.</div>';
+    return;
+  }
+
+  results.innerHTML = matches.map(m => {
+    const isAdded = SELECTED.some(s => s.id === m.id);
+    return `
+      <div class="picker-row ${isAdded ? 'added' : ''}" data-id="${escapeHtml(m.id)}">
+        <span class="id">${escapeHtml(m.name)} <span style="color:var(--dim)">— ${escapeHtml(m.id)}</span></span>
+        <span class="price">${isAdded ? 'добавлено' : fmtPrice(m.inCost, m.outCost)}</span>
+      </div>
+    `;
+  }).join('');
+
+  results.querySelectorAll('.picker-row').forEach(row => {
+    row.addEventListener('click', () => {
+      const id = row.getAttribute('data-id');
+      if (SELECTED.some(s => s.id === id)) return;
+      const model = CATALOG.find(m => m.id === id);
+      if (model) {
+        SELECTED.push(model);
+        renderSelected();
+        renderPicker(el('modelSearch').value);
+      }
+    });
+  });
+}
+
+function renderSelected(){
+  const container = el('selectedChips');
+  if (selectionInitialized) lsSet(LS_SELECTED, JSON.stringify(SELECTED.map(m => m.id)));
+  el('selCount').textContent = SELECTED.length ? `${SELECTED.length} выбрано` : '';
+  el('manyWarn').style.display = SELECTED.length > 6 ? 'block' : 'none';
+
+  if (SELECTED.length === 0) {
+    container.innerHTML = '<div class="empty-note">Ничего не выбрано — найди модели в поиске ниже.</div>';
+  } else {
+    container.innerHTML = SELECTED.map(m => `
+      <div class="sel-chip" data-id="${escapeHtml(m.id)}">
+        <span>${escapeHtml(m.name)}</span>
+        <span class="price">${fmtPrice(m.inCost, m.outCost)}</span>
+        <button data-remove="${escapeHtml(m.id)}" title="Убрать">×</button>
+      </div>
+    `).join('');
+
+    container.querySelectorAll('button[data-remove]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const id = btn.getAttribute('data-remove');
+        SELECTED = SELECTED.filter(m => m.id !== id);
+        renderSelected();
+        renderPicker(el('modelSearch').value);
+      });
+    });
+  }
+
+  updateFullFileModelSelect();
+}
+
+// The translate / fix / AI-fill model inputs are independent of the comparison list now;
+// this only re-checks buttons and price hints after the catalog or selection changes.
+function updateFullFileModelSelect(){
+  checkTranslateFileBtn();
+  checkFixBtn();
+  refreshModelHint(MODEL_INPUTS[2]);
+}
+
+/* ---------- sample / srt cleaning ---------- */
+
+function resetSample(){
+  el('lines').value = SAMPLE_LINES.join('\n');
+}
+
+const TIMECODE_RE = /\d{1,2}:\d{2}:\d{2}[.,]\d{3}\s*-->\s*\d{1,2}:\d{2}:\d{2}[.,]\d{3}/;
+
+function looksLikeSubtitleFile(text){
+  return TIMECODE_RE.test(text);
+}
+
+function cleanSubtitleText(raw){
+  const text = raw.replace(/\r\n/g, '\n').replace(/\r/g, '\n').replace(/^WEBVTT.*\n/i, '');
+  const blocks = text.split(/\n\s*\n/);
+  let lines = [];
+
+  blocks.forEach(block => {
+    const blockLines = block.split('\n').map(l => l.trim()).filter(l => l.length > 0);
+    if (blockLines.length === 0) return;
+    let start = 0;
+    if (/^\d+$/.test(blockLines[0])) start = 1;
+    if (blockLines[start] && TIMECODE_RE.test(blockLines[start])) start += 1;
+    const textLines = blockLines.slice(start);
+    if (textLines.length > 0) {
+      const joined = textLines.join(' ').replace(/<[^>]+>/g, '').replace(/\{[^}]*\}/g, '').trim();
+      if (joined) lines.push(joined);
+    }
+  });
+
+  if (lines.length === 0) {
+    lines = text.split('\n')
+      .map(l => l.trim())
+      .filter(l => l.length > 0 && !/^\d+$/.test(l) && !TIMECODE_RE.test(l))
+      .map(l => l.replace(/<[^>]+>/g, '').replace(/\{[^}]*\}/g, '').trim())
+      .filter(Boolean);
+  }
+
+  return lines;
+}
+
+/* ---------- series context (local folder via File System Access API) ---------- */
+
+function fsApiSupported(){
+  return 'showDirectoryPicker' in window;
+}
+
+function currentMode(){
+  const checked = document.querySelector('input[name="mode"]:checked');
+  return checked ? checked.value : 'single';
+}
+
+function onModeChange(){
+  const mode = currentMode();
+  el('seriesPanel').style.display = mode === 'series' ? 'block' : 'none';
+  if (mode === 'series' && !fsApiSupported()) {
+    el('fsApiWarn').style.display = 'block';
+    el('selectFolderBtn').disabled = true;
+  }
+}
+
+async function selectSeriesFolder(){
+  if (!fsApiSupported()) return;
+  try {
+    dirHandle = await window.showDirectoryPicker();
+    el('folderStatus').textContent = `Папка: ${dirHandle.name}`;
+    await loadOrCreateContext();
+  } catch (e) {
+    if (e.name !== 'AbortError') {
+      el('folderStatus').textContent = `Ошибка доступа: ${e.message}`;
+    }
+  }
+}
+
+async function loadOrCreateContext(){
+  try {
+    const fh = await dirHandle.getFileHandle(CONTEXT_FILE_NAME);
+    const file = await fh.getFile();
+    const text = await file.text();
+    seriesContext = JSON.parse(text);
+    seriesContext.characters = seriesContext.characters || [];
+    seriesContext.glossary = seriesContext.glossary || [];
+    seriesContext.history = seriesContext.history || [];
+  } catch (e) {
+    seriesContext = { seriesName: dirHandle.name, characters: [], glossary: [], styleNotes: '', history: [] };
+    await saveSeriesContext(false);
+  }
+
+  el('seriesName').value = seriesContext.seriesName || dirHandle.name;
+  el('styleNotes').value = seriesContext.styleNotes || '';
+  renderCharTable();
+  renderGlossTable();
+  el('contextEditor').style.display = 'block';
+
+  const status = el('contextStatus');
+  status.className = 'status';
+  status.textContent = seriesContext.history.length
+    ? `Контекст загружен, прошлых прогонов: ${seriesContext.history.length}`
+    : 'Новый контекст создан в этой папке';
+}
+
+async function saveSeriesContext(showStatus = true){
+  if (!dirHandle || !seriesContext) return;
+  seriesContext.seriesName = el('seriesName').value.trim() || seriesContext.seriesName;
+  seriesContext.styleNotes = el('styleNotes').value;
+  try {
+    const fh = await dirHandle.getFileHandle(CONTEXT_FILE_NAME, { create: true });
+    const writable = await fh.createWritable();
+    await writable.write(JSON.stringify(seriesContext, null, 2));
+    await writable.close();
+    if (showStatus) {
+      const status = el('contextStatus');
+      status.className = 'status';
+      status.textContent = 'Сохранено.';
+    }
+  } catch (e) {
+    if (showStatus) {
+      const status = el('contextStatus');
+      status.className = 'status err';
+      status.textContent = `Ошибка сохранения: ${e.message}`;
+    }
+  }
+}
+
+function renderCharTable(){
+  const box = el('charTable');
+  box.innerHTML = '';
+  if (!seriesContext.characters.length) {
+    box.innerHTML = '<div class="empty-note">Персонажи не добавлены — можно не заполнять, если пол легко понятен из текста.</div>';
+    return;
+  }
+  seriesContext.characters.forEach((c, i) => {
+    const row = document.createElement('div');
+    row.className = 'ctx-row';
+    row.innerHTML = `
+      <input type="text" placeholder="Имя" value="${escapeAttr(c.name)}" data-field="name">
+      <select data-field="gender">
+        <option value="женский" ${c.gender==='женский'?'selected':''}>женский</option>
+        <option value="мужской" ${c.gender==='мужской'?'selected':''}>мужской</option>
+        <option value="другое" ${c.gender==='другое'?'selected':''}>другое</option>
+      </select>
+      <input type="text" placeholder="Заметка (необязательно)" value="${escapeAttr(c.note || '')}" data-field="note">
+      <button type="button" data-remove title="Убрать">×</button>
+    `;
+    row.querySelectorAll('input, select').forEach(inp => {
+      inp.addEventListener('input', () => { c[inp.dataset.field] = inp.value; });
+    });
+    row.querySelector('[data-remove]').addEventListener('click', () => {
+      seriesContext.characters.splice(i, 1);
+      renderCharTable();
+    });
+    box.appendChild(row);
+  });
+}
+
+function renderGlossTable(){
+  const box = el('glossTable');
+  box.innerHTML = '';
+  if (!seriesContext.glossary.length) {
+    box.innerHTML = '<div class="empty-note">Термины не добавлены.</div>';
+    return;
+  }
+  seriesContext.glossary.forEach((g, i) => {
+    const row = document.createElement('div');
+    row.className = 'ctx-row';
+    row.innerHTML = `
+      <input type="text" placeholder="Оригинал" value="${escapeAttr(g.term)}" data-field="term">
+      <input type="text" placeholder="Перевод" value="${escapeAttr(g.translation)}" data-field="translation">
+      <input type="text" placeholder="Заметка (необязательно)" value="${escapeAttr(g.note || '')}" data-field="note">
+      <button type="button" data-remove title="Убрать">×</button>
+    `;
+    row.querySelectorAll('input').forEach(inp => {
+      inp.addEventListener('input', () => { g[inp.dataset.field] = inp.value; });
+    });
+    row.querySelector('[data-remove]').addEventListener('click', () => {
+      seriesContext.glossary.splice(i, 1);
+      renderGlossTable();
+    });
+    box.appendChild(row);
+  });
+}
+
+function buildContextPromptSection(tgt){
+  if (!seriesContext) return '';
+  const parts = [];
+  if (seriesContext.seriesName) parts.push(`This is an episode of the series "${seriesContext.seriesName}".`);
+  if (seriesContext.styleNotes && seriesContext.styleNotes.trim()) parts.push(`Style/tone notes: ${seriesContext.styleNotes.trim()}`);
+
+  const chars = (seriesContext.characters || []).filter(c => c.name && c.name.trim());
+  if (chars.length) {
+    const list = chars.map(c => `${c.name} — ${c.gender}${c.note ? ', ' + c.note : ''}`).join('; ');
+    parts.push(`Known characters and their gender — keep grammatical gender agreement in ${tgt} consistent for these speakers across every line, even short ones: ${list}.`);
+  }
+
+  const gloss = (seriesContext.glossary || []).filter(g => g.term && g.term.trim() && g.translation && g.translation.trim());
+  if (gloss.length) {
+    const list = gloss.map(g => `"${g.term}" → "${g.translation}"${g.note ? ` (${g.note})` : ''}`).join('; ');
+    parts.push(`Established glossary for this series — always use these exact translations: ${list}.`);
+  }
+
+  return parts.join('\n');
+}
+
+/* ---------- translation ---------- */
+
+function computeMaxTokens(model, lineCount){
+  const estimate = Math.round(lineCount * 60) + 500; // ~60 tokens/line headroom + fixed overhead
+  const cap = model.maxOutput && model.maxOutput > 0 ? model.maxOutput : 16000;
+  return Math.max(1024, Math.min(estimate, cap));
+}
+
+async function askModel(model, apiKey, prompt, useWebSearch){
+  const modelId = useWebSearch ? `${model.id}:online` : model.id;
+  const resp = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${apiKey}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      model: modelId,
+      messages: [{ role: 'user', content: prompt }],
+      temperature: 0.3,
+    })
+  });
+  if (!resp.ok) {
+    const errText = await resp.text().catch(() => resp.statusText);
+    throw new Error(`${resp.status}: ${errText.slice(0, 200)}`);
+  }
+  const data = await resp.json();
+  return (data?.choices?.[0]?.message?.content ?? '').trim();
+}
+
+async function translateWithModel(model, lines, src, tgt, apiKey, contextSection){
+  const numbered = lines.map((l, i) => `${i+1}. ${l}`).join('\n');
+  let system = `You are a professional subtitle translator. Translate each numbered line from ${src} to ${tgt}, preserving natural spoken register, tone and length appropriate for subtitles. Keep the exact same number of lines as input, one output line per input line, in the same order — do not merge, split, or skip any lines. Every single line must be translated, never leave any line in the original language, even short or repeated words. Keep punctuation and formatting as in input. Translate naturally and idiomatically, preserving tone, humor, and character voice rather than word-for-word. Do not censor the translation. Use the surrounding lines as context, not just each line in isolation — in particular, infer each speaker's gender from names, pronouns, and dialogue cues elsewhere in the text, and keep grammatical gender agreement in ${tgt} consistent for the same speaker across all their lines, even when a line alone gives no clue. Give only the translated lines, no line numbers, no comments, no explanations. Return ONLY a JSON array of strings, one translated line per array element.`;
+
+  if (contextSection) {
+    system += `\n\nSeries context — use this to keep terminology, names and characters consistent:\n${contextSection}`;
+  }
+
+  const resp = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${apiKey}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      model: model.id,
+      messages: [
+        { role: 'system', content: system },
+        { role: 'user', content: numbered }
+      ],
+      temperature: 0.3,
+      max_tokens: computeMaxTokens(model, lines.length),
+    })
+  });
+
+  if (!resp.ok) {
+    const errText = await resp.text().catch(() => resp.statusText);
+    throw new Error(`${resp.status}: ${errText.slice(0, 200)}`);
+  }
+
+  const data = await resp.json();
+  const content = data?.choices?.[0]?.message?.content ?? '';
+  const usage = data?.usage ?? {};
+
+  let parsed;
+  try {
+    const cleaned = content.replace(/```json|```/g, '').trim();
+    parsed = JSON.parse(cleaned);
+    if (!Array.isArray(parsed)) throw new Error('not an array');
+  } catch (e) {
+    parsed = content.split('\n').filter(x => x.trim()).map(x => x.replace(/^\d+\.\s*/, ''));
+  }
+
+  return { lines: parsed, usage };
+}
+
+/* ---------- full .srt file translation (preserves timing) ---------- */
+
+let uploadedSrtCues = null;
+let uploadedFileBaseName = '';
+let stopRequested = false;
+let translateRunning = false;
+let fixRunning = false;
+
+function parseSrtFile(raw){
+  const text = raw.replace(/\r\n/g, '\n').replace(/\r/g, '\n').replace(/^WEBVTT.*\n/i, '');
+  const blocks = text.split(/\n\s*\n/);
+  const cues = [];
+
+  blocks.forEach(block => {
+    const blockLines = block.split('\n').map(l => l.trim()).filter(l => l.length > 0);
+    if (blockLines.length === 0) return;
+    let start = 0;
+    if (/^\d+$/.test(blockLines[0])) start = 1;
+    if (!blockLines[start] || !TIMECODE_RE.test(blockLines[start])) return;
+    const time = blockLines[start];
+    start += 1;
+    const textLines = blockLines.slice(start);
+    if (textLines.length === 0) return;
+    cues.push({ time, textLines });
+  });
+
+  return cues;
+}
+
+function extractMeta(textLines){
+  const joined = textLines.join(' ').trim();
+  let text = joined;
+  let prefixTag = '';
+
+  const tagMatch = text.match(/^(\{[^}]*\})/);
+  if (tagMatch) {
+    prefixTag = tagMatch[1];
+    text = text.slice(tagMatch[1].length).trim();
+  }
+
+  let italic = false;
+  const italicMatch = text.match(/^<i>([\s\S]*)<\/i>$/i);
+  if (italicMatch) {
+    italic = true;
+    text = italicMatch[1].trim();
+  }
+
+  text = text.replace(/<[^>]+>/g, '').trim();
+  return { plainText: text, prefixTag, italic };
+}
+
+function formatTranslatedCue(meta, translated){
+  let out = translated;
+  if (meta.italic) out = `<i>${out}</i>`;
+  if (meta.prefixTag) out = `${meta.prefixTag}${out}`;
+  return out;
+}
+
+const DEFAULT_FULL_FILE_PROMPT = `Translate from {0} to {1}. Keep the exact same number of lines as input, one output line per input line, in the same order — do not merge, split, or skip any lines. Every single line must be translated, never leave any line in the original language, even short or repeated words. Keep punctuation and formatting as in input. Translate naturally and idiomatically, preserving tone, humor, and character voice rather than word-for-word. Do not censor the translation. Give only the translated lines, no line numbers, no comments, no explanations.`;
+
+const DEFAULT_AI_CHARS_PROMPT = `List the main and recurring named characters of the TV series "{series}"{season}, as their names appear in the original-language version of the show. Reply with ONLY a comma-separated list of character names, nothing else — no descriptions, no numbering, no extra text. If you are not fully confident about the exact character list, still give your best-guess list, but start your reply with "ПРИМЕРНО: " before the list so the person knows to double-check it carefully.`;
+
+function hashStr(str){
+  let hash = 5381;
+  for (let i = 0; i < str.length; i++) {
+    hash = ((hash << 5) + hash) + str.charCodeAt(i);
+    hash |= 0;
+  }
+  return (hash >>> 0).toString(36);
+}
+
+function fileFingerprint(cues, filename){
+  const raw = filename + '|' + cues.length + '|' + cues.map(c => c.textLines.join('')).join('|');
+  return hashStr(raw);
+}
+
+function loadProgress(fp){
+  try {
+    const raw = localStorage.getItem('subtest-progress:' + fp);
+    return raw ? JSON.parse(raw) : null;
+  } catch (e) { return null; }
+}
+
+function saveProgress(fp, data){
+  try { localStorage.setItem('subtest-progress:' + fp, JSON.stringify(data)); } catch (e) {}
+}
+
+function clearProgress(fp){
+  try { localStorage.removeItem('subtest-progress:' + fp); } catch (e) {}
+}
+
+async function translateBatchForFullFile(model, texts, src, tgt, apiKey, basePrompt, contextSection, tailPairs){
+  const numbered = texts.map((l, i) => `${i+1}. ${l}`).join('\n');
+  let system = basePrompt.replace('{0}', src).replace('{1}', tgt);
+
+  if (contextSection) {
+    system += `\n\nSeries context — use this to keep terminology, names and characters consistent:\n${contextSection}`;
+  }
+  if (tailPairs && tailPairs.length) {
+    const tailText = tailPairs.map(p => `"${p.orig}" → "${p.translated}"`).join('\n');
+    system += `\n\nThe following lines immediately precede this batch and were already translated — use them only for continuity of tone/terminology, do not re-translate them:\n${tailText}`;
+  }
+
+  const resp = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${apiKey}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      model: model.id,
+      messages: [
+        { role: 'system', content: system },
+        { role: 'user', content: numbered }
+      ],
+      temperature: 0.3,
+      max_tokens: computeMaxTokens(model, texts.length),
+    })
+  });
+
+  if (!resp.ok) {
+    const errText = await resp.text().catch(() => resp.statusText);
+    throw new Error(`${resp.status}: ${errText.slice(0, 200)}`);
+  }
+
+  const data = await resp.json();
+  const content = data?.choices?.[0]?.message?.content ?? '';
+  const usage = data?.usage ?? {};
+
+  let parsed;
+  try {
+    const cleaned = content.replace(/```json|```/g, '').trim();
+    parsed = JSON.parse(cleaned);
+    if (!Array.isArray(parsed)) throw new Error('not an array');
+  } catch (e) {
+    parsed = content.split('\n').filter(x => x.trim()).map(x => x.replace(/^\d+\.\s*/, ''));
+  }
+
+  return { lines: parsed, usage };
+}
+
+function timeToMs(t){
+  const [hms, ms] = t.split(/[.,]/);
+  const [h, m, s] = hms.split(':').map(Number);
+  return (((h * 60 + m) * 60 + s) * 1000) + parseInt(ms || '0', 10);
+}
+
+function parseCueTimes(timeStr){
+  const [startStr, endStr] = timeStr.split('-->').map(s => s.trim());
+  return { start: timeToMs(startStr), end: timeToMs(endStr) };
+}
+
+function buildBatches(cues, targetSize, pauseMs){
+  const maxSize = Math.round(targetSize * 1.6);
+  const batches = [];
+  let current = [];
+
+  for (let i = 0; i < cues.length; i++) {
+    current.push(i);
+    const isLast = i === cues.length - 1;
+
+    if (isLast) {
+      batches.push(current);
+      current = [];
+      continue;
+    }
+
+    let gap = 0;
+    try {
+      gap = parseCueTimes(cues[i + 1].time).start - parseCueTimes(cues[i].time).end;
+    } catch (e) {
+      gap = 0;
+    }
+
+    const reachedTarget = current.length >= targetSize;
+    const reachedMax = current.length >= maxSize;
+
+    if (reachedMax || (reachedTarget && gap >= pauseMs)) {
+      batches.push(current);
+      current = [];
+    }
+  }
+
+  if (current.length) batches.push(current);
+  return batches; // array of arrays of cue indices
+}
+
+/**
+ * Translates a full file, resuming from `existingLines` where already filled in.
+ * Persists progress after every batch. Stops (without throwing) on the first
+ * batch error, or if `shouldStop()` returns true between batches, returning
+ * what was completed so far.
+ */
+async function translateFullFile(cues, model, src, tgt, apiKey, basePrompt, contextSection, batchSize, tailSize, pauseMs, existingLines, fp, filename, onBatchDone, shouldStop){
+  const finalLines = existingLines.slice();
+  const batches = buildBatches(cues, batchSize, pauseMs);
+  let tailPairs = [];
+  let usageIn = 0, usageOut = 0;
+  let stoppedAt = null;
+  let errorMsg = null;
+  let cancelled = false;
+
+  for (const idxs of batches) {
+    if (shouldStop && shouldStop()) {
+      cancelled = true;
+      stoppedAt = idxs[0];
+      break;
+    }
+
+    const alreadyDone = idxs.every(i => finalLines[i] && finalLines[i].length > 0);
+
+    if (alreadyDone) {
+      // rebuild tail context from existing translations for continuity
+      const tailIdxs = idxs.slice(Math.max(0, idxs.length - tailSize));
+      tailPairs = tailIdxs.map(i => ({ orig: extractMeta(cues[i].textLines).plainText, translated: finalLines[i] }));
+      onBatchDone(finalLines, null);
+      continue;
+    }
+
+    const metas = idxs.map(i => extractMeta(cues[i].textLines));
+    const plainTexts = metas.map(m => m.plainText);
+
+    try {
+      const { lines: translated, usage } = await translateBatchForFullFile(model, plainTexts, src, tgt, apiKey, basePrompt, contextSection, tailPairs);
+      idxs.forEach((cueIdx, j) => {
+        const t = translated[j] || plainTexts[j];
+        finalLines[cueIdx] = formatTranslatedCue(metas[j], t);
+      });
+      usageIn += usage.prompt_tokens || 0;
+      usageOut += usage.completion_tokens || 0;
+
+      const tailStart = Math.max(0, idxs.length - tailSize);
+      tailPairs = [];
+      for (let j = tailStart; j < idxs.length; j++) {
+        tailPairs.push({ orig: plainTexts[j], translated: translated[j] || plainTexts[j] });
+      }
+
+      saveProgress(fp, { filename, total: cues.length, lines: finalLines, timestamp: Date.now() });
+      onBatchDone(finalLines, null);
+    } catch (e) {
+      saveProgress(fp, { filename, total: cues.length, lines: finalLines, timestamp: Date.now() });
+      stoppedAt = idxs[0];
+      errorMsg = e.message;
+      onBatchDone(finalLines, errorMsg);
+      break;
+    }
+  }
+
+  return { finalLines, usageIn, usageOut, stoppedAt, errorMsg, cancelled };
+}
+
+function buildSrtOutput(cues, translatedLines){
+  return cues.map((c, i) => `${i + 1}\n${c.time}\n${translatedLines[i] || ''}\n`).join('\n').trim() + '\n';
+}
+
+function downloadTextFile(filename, text){
+  const blob = new Blob([text], { type: 'text/plain;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+async function saveOrDownloadSrt(filename, text){
+  const mode = currentMode();
+  if (mode === 'series' && dirHandle) {
+    try {
+      const fh = await dirHandle.getFileHandle(filename, { create: true });
+      const writable = await fh.createWritable();
+      await writable.write(text);
+      await writable.close();
+      return { savedTo: `папку сериала (${dirHandle.name})` };
+    } catch (e) {
+      downloadTextFile(filename, text);
+      return { savedTo: 'загрузки браузера (не удалось сохранить в папку сериала)' };
+    }
+  }
+  downloadTextFile(filename, text);
+  return { savedTo: 'загрузки браузера' };
+}
+
+function checkTranslateFileBtn(){
+  const btn = el('translateFileBtn');
+  const hasModel = !!resolveModel(el('fullFileModel').value);
+  btn.disabled = translateRunning || !(uploadedSrtCues && uploadedSrtCues.length && hasModel);
+  refreshModelHint(MODEL_INPUTS[0]);
+}
+
+function renderSrtTable(cues, lines){
+  const box = el('srtTableBody');
+  box.innerHTML = '';
+  el('srtTableWrap').style.display = 'block';
+  el('srtTableCount').textContent = `${cues.length} реплик`;
+
+  cues.forEach((c, i) => {
+    const row = document.createElement('div');
+    row.className = 'srt-row';
+    const orig = c.textLines.join(' ');
+    const hasTranslation = lines[i] && lines[i].length > 0;
+    row.innerHTML = `
+      <div class="srt-time">${escapeHtml(c.time)}</div>
+      <div class="srt-orig">${escapeHtml(orig)}</div>
+      <input type="text" class="srt-trans${hasTranslation ? '' : ' pending'}" id="srtTrans-${i}" value="${escapeAttr(lines[i] || '')}" placeholder="…">
+    `;
+    box.appendChild(row);
+  });
+}
+
+function updateCellValue(prefix, i, value){
+  const input = document.getElementById(`${prefix}-${i}`);
+  if (!input) return;
+  input.value = value || '';
+  input.classList.toggle('pending', !value);
+}
+
+function updateSrtTableCell(i, value){
+  updateCellValue('srtTrans', i, value);
+}
+
+function readCellValues(prefix, count){
+  const values = [];
+  for (let i = 0; i < count; i++) {
+    const input = document.getElementById(`${prefix}-${i}`);
+    values.push(input ? input.value : '');
+  }
+  return values;
+}
+
+function readSrtTableValues(count){
+  return readCellValues('srtTrans', count);
+}
+
+/* ---------- fix already-translated files with gaps ---------- */
+
+let fixCues = null;
+let fixFileBaseName = '';
+
+const SCRIPT_TESTERS = {
+  'russian': /[\u0400-\u04FF]/, 'ukrainian': /[\u0400-\u04FF]/, 'bulgarian': /[\u0400-\u04FF]/, 'serbian': /[\u0400-\u04FF]/,
+  'japanese': /[\u3040-\u30FF\u4E00-\u9FFF]/,
+  'korean': /[\uAC00-\uD7AF]/,
+  'chinese': /[\u4E00-\u9FFF]/,
+  'arabic': /[\u0600-\u06FF]/,
+  'hindi': /[\u0900-\u097F]/,
+  'greek': /[\u0370-\u03FF]/,
+};
+
+function getScriptTester(tgtLang){
+  return SCRIPT_TESTERS[tgtLang.trim().toLowerCase()] || null;
+}
+
+function looksUntranslated(text, tester){
+  if (!tester) return false;
+  return !tester.test(text);
+}
+
+function renderFixTable(cues){
+  const box = el('fixTableBody');
+  box.innerHTML = '';
+  el('fixTableWrap').style.display = 'block';
+  el('fixTableCount').textContent = `${cues.length} реплик`;
+
+  const tgt = el('tgtLang').value.trim() || 'Russian';
+  const tester = getScriptTester(tgt);
+  el('fixDetectionWarn').style.display = tester ? 'none' : 'block';
+
+  cues.forEach((c, i) => {
+    const row = document.createElement('div');
+    row.className = 'srt-row';
+    const text = c.textLines.join(' ');
+    const flagged = looksUntranslated(text, tester);
+    row.innerHTML = `
+      <div class="srt-time" style="width:44px; justify-content:center;"><input type="checkbox" id="fixCheck-${i}" ${flagged ? 'checked' : ''}></div>
+      <div class="srt-time">${escapeHtml(c.time)}</div>
+      <input type="text" class="srt-trans${flagged ? ' pending' : ''}" id="fixTrans-${i}" value="${escapeAttr(text)}">
+    `;
+    box.appendChild(row);
+  });
+}
+
+function checkFixBtn(){
+  const btn = el('fixTranslateBtn');
+  const hasModel = !!resolveModel(el('fixModel').value);
+  btn.disabled = fixRunning || !(fixCues && fixCues.length && hasModel);
+  refreshModelHint(MODEL_INPUTS[1]);
+}
+
+async function translateFixSelected(){
+  if (fixRunning) return;
+  fixRunning = true;
+  checkFixBtn();
+  try { await translateFixSelectedInner(); }
+  finally { fixRunning = false; checkFixBtn(); }
+}
+
+async function translateFixSelectedInner(){
+  const apiKey = el('apiKey').value.trim();
+  const src = el('srcLang').value.trim() || 'English';
+  const tgt = el('tgtLang').value.trim() || 'Russian';
+  const basePrompt = el('fullFilePrompt').value.trim() || DEFAULT_FULL_FILE_PROMPT;
+  const model = resolveModel(el('fixModel').value);
+  const status = el('fixStatus');
+  const btn = el('fixTranslateBtn');
+  const mode = currentMode();
+
+  status.className = 'status';
+  if (!apiKey) { status.className = 'status err'; status.textContent = 'Вставь ключ OpenRouter.'; return; }
+  if (!model) { status.className = 'status err'; status.textContent = 'Выбери модель.'; return; }
+  if (!fixCues || !fixCues.length) { status.className = 'status err'; status.textContent = 'Сначала загрузи файл.'; return; }
+
+  const checkedIdxs = [];
+  fixCues.forEach((c, i) => {
+    const cb = document.getElementById(`fixCheck-${i}`);
+    if (cb && cb.checked) checkedIdxs.push(i);
+  });
+  if (checkedIdxs.length === 0) {
+    status.className = 'status err';
+    status.textContent = 'Не отмечено ни одной строки для перевода.';
+    return;
+  }
+
+  const contextSection = (mode === 'series' && seriesContext) ? buildContextPromptSection(tgt) : '';
+
+  btn.disabled = true;
+  status.textContent = 'Проверяю актуальные цены…';
+  await refreshCatalogPrices(true);
+  status.textContent = `Перевожу ${checkedIdxs.length} отмеченных реплик...`;
+
+  const chunkSize = 30;
+  let translatedCount = 0;
+
+  for (let i = 0; i < checkedIdxs.length; i += chunkSize) {
+    const idxChunk = checkedIdxs.slice(i, i + chunkSize);
+    const texts = idxChunk.map(idx => document.getElementById(`fixTrans-${idx}`).value);
+
+    // light context: a line just before the first index in this chunk, whatever its current text is
+    const beforeIdx = idxChunk[0] - 1;
+    const tailPairs = [];
+    if (beforeIdx >= 0) {
+      const beforeText = document.getElementById(`fixTrans-${beforeIdx}`).value;
+      tailPairs.push({ orig: beforeText, translated: beforeText });
+    }
+
+    try {
+      const { lines: translated } = await translateBatchForFullFile(model, texts, src, tgt, apiKey, basePrompt, contextSection, tailPairs);
+      idxChunk.forEach((idx, j) => {
+        const t = translated[j] || texts[j];
+        updateCellValue('fixTrans', idx, t);
+        translatedCount++;
+      });
+      status.textContent = `Переведено ${translatedCount} из ${checkedIdxs.length}...`;
+    } catch (e) {
+      status.className = 'status err';
+      status.textContent = `Остановлено на ошибке: ${e.message}. Переведено ${translatedCount} из ${checkedIdxs.length} — остальное можно допереводить повторным запуском.`;
+      btn.disabled = false;
+      return;
+    }
+  }
+
+  status.className = 'status';
+  status.textContent = `Готово: переведено ${translatedCount} реплик. Проверь таблицу и нажми «Сохранить .srt».`;
+  btn.disabled = false;
+}
+
+let cachedUsdRubRate = null;
+
+async function fetchUsdRubRate(){
+  if (cachedUsdRubRate) return cachedUsdRubRate;
+  try {
+    const resp = await fetch('https://open.er-api.com/v6/latest/USD');
+    const data = await resp.json();
+    if (data?.rates?.RUB) {
+      cachedUsdRubRate = { rate: data.rates.RUB, approx: false };
+      return cachedUsdRubRate;
+    }
+    throw new Error('no RUB rate in response');
+  } catch (e) {
+    cachedUsdRubRate = { rate: 80, approx: true };
+    return cachedUsdRubRate;
+  }
+}
+
+function formatDuration(ms){
+  const totalSec = Math.round(ms / 1000);
+  const min = Math.floor(totalSec / 60);
+  const sec = totalSec % 60;
+  return min > 0 ? `${min} мин ${sec} сек` : `${sec} сек`;
+}
+
+async function renderCostSummary(model, usageIn, usageOut, durationMs, stopped){
+  const box = el('costSummary');
+  const costUsd = (usageIn / 1e6) * model.inCost + (usageOut / 1e6) * model.outCost;
+  const { rate, approx } = await fetchUsdRubRate();
+  const costRub = costUsd * rate;
+
+  box.style.display = 'block';
+  box.innerHTML = `
+    <h3>${stopped ? 'Потрачено до остановки' : 'Итого по переводу'}</h3>
+    <div class="sum-line"><span>Токены (вход/выход)</span><b>${usageIn} / ${usageOut}</b></div>
+    <div class="sum-line"><span>Стоимость</span><b>$${costUsd.toFixed(4)} ≈ ${costRub.toFixed(2)} ₽${approx ? ' (курс приблизительный)' : ''}</b></div>
+    <div class="sum-line"><span>Время перевода</span><b>${formatDuration(durationMs)}</b></div>
+  `;
+}
+
+
+function renderScreen(lines, models){
+  el('screen').style.display = 'block';
+  el('lineCount').textContent = `${lines.length} реплик · ${models.length} моделей`;
+
+  const colHeads = el('colHeads');
+  colHeads.innerHTML = `<div style="width:64px;flex-shrink:0;"></div><div style="width:220px;flex-shrink:0;"></div>`;
+  models.forEach(m => {
+    const d = document.createElement('div');
+    d.className = 'model-col-head';
+    d.id = `head-${cssId(m.id)}`;
+    d.innerHTML = `${escapeHtml(m.name)}<span class="cost" id="cost-${cssId(m.id)}">—</span>`;
+    colHeads.appendChild(d);
+  });
+
+  const cues = el('cues');
+  cues.innerHTML = '';
+  lines.forEach((line, i) => {
+    const cue = document.createElement('div');
+    cue.className = 'cue';
+    cue.innerHTML = `
+      <div class="cue-num">${String(i+1).padStart(2,'0')}</div>
+      <div class="cue-src">${escapeHtml(line)}</div>
+      ${models.map(m => `<div class="cue-col" id="cell-${cssId(m.id)}-${i}"><span class="cap pending">…</span></div>`).join('')}
+    `;
+    cues.appendChild(cue);
+  });
+}
+
+function setCell(modelId, idx, text, isError){
+  const cell = document.getElementById(`cell-${cssId(modelId)}-${idx}`);
+  if (!cell) return;
+  cell.innerHTML = `<span class="cap${isError ? ' error' : ''}">${escapeHtml(text)}</span>`;
+}
+
+function renderSummary(results, lineCount, epSize){
+  const summary = el('summary');
+  summary.style.display = 'flex';
+  summary.innerHTML = '';
+
+  results.forEach(r => {
+    const card = document.createElement('div');
+    card.className = 'sum-card';
+    if (r.error) {
+      card.innerHTML = `<h3>${escapeHtml(r.model.name)}</h3><div class="sum-line" style="color:var(--err)">Ошибка: ${escapeHtml(r.error)}</div>`;
+    } else {
+      const inTok = r.usage.prompt_tokens || 0;
+      const outTok = r.usage.completion_tokens || 0;
+      const testCost = (inTok/1e6)*r.model.inCost + (outTok/1e6)*r.model.outCost;
+      const perLineIn = inTok / lineCount;
+      const perLineOut = outTok / lineCount;
+      const epCost = (perLineIn*epSize/1e6)*r.model.inCost + (perLineOut*epSize/1e6)*r.model.outCost;
+      card.innerHTML = `
+        <h3>${escapeHtml(r.model.name)}</h3>
+        <div class="sum-line"><span>Токены (вход/выход)</span><b>${inTok} / ${outTok}</b></div>
+        <div class="sum-line"><span>Стоимость теста</span><b>$${testCost.toFixed(5)}</b></div>
+        <div class="sum-line"><span>≈ на ${epSize} реплик</span><b class="ep">$${epCost.toFixed(4)}</b></div>
+      `;
+    }
+    summary.appendChild(card);
+  });
+}
+
+async function run(){
+  const apiKey = el('apiKey').value.trim();
+  const rawLines = el('lines').value.split('\n').map(l => l.trim()).filter(Boolean);
+  const src = el('srcLang').value.trim() || 'English';
+  const tgt = el('tgtLang').value.trim() || 'Russian';
+  const epSize = parseInt(el('epSize').value) || 900;
+  const models = SELECTED;
+  const status = el('status');
+  const btn = el('runBtn');
+  const mode = currentMode();
+
+  status.className = 'status';
+  if (!apiKey) { status.textContent = 'Вставь ключ OpenRouter.'; status.className = 'status err'; return; }
+  if (rawLines.length === 0) { status.textContent = 'Добавь хотя бы одну реплику.'; status.className = 'status err'; return; }
+  if (models.length === 0) { status.textContent = 'Выбери хотя бы одну модель.'; status.className = 'status err'; return; }
+
+  const contextSection = (mode === 'series' && seriesContext) ? buildContextPromptSection(tgt) : '';
+
+  btn.disabled = true;
+  status.textContent = 'Проверяю актуальные цены…';
+  await refreshCatalogPrices(true);
+  status.textContent = `Запрашиваю ${models.length} модел${models.length===1?'ь':models.length<5?'и':'ей'}...`;
+
+  renderScreen(rawLines, models);
+  el('summary').style.display = 'none';
+
+  const results = await Promise.all(models.map(async (m) => {
+    try {
+      const { lines: translated, usage } = await translateWithModel(m, rawLines, src, tgt, apiKey, contextSection);
+      rawLines.forEach((_, i) => setCell(m.id, i, translated[i] || '—', false));
+      const inTok = usage.prompt_tokens || 0;
+      const outTok = usage.completion_tokens || 0;
+      const testCost = (inTok/1e6)*m.inCost + (outTok/1e6)*m.outCost;
+      const headCost = document.getElementById(`cost-${cssId(m.id)}`);
+      if (headCost) headCost.textContent = `$${testCost.toFixed(5)}`;
+      return { model: m, usage };
+    } catch (e) {
+      rawLines.forEach((_, i) => setCell(m.id, i, e.message, true));
+      return { model: m, error: e.message };
+    }
+  }));
+
+  renderSummary(results, rawLines.length, epSize);
+
+  if (mode === 'series' && dirHandle && seriesContext) {
+    seriesContext.history.push({
+      date: new Date().toISOString(),
+      lines: rawLines.length,
+      models: models.map(m => m.id),
+    });
+    await saveSeriesContext(false);
+  }
+
+  status.textContent = 'Готово.';
+  btn.disabled = false;
+}
+
+function applyTheme(theme){
+  document.body.classList.toggle('dark-theme', theme === 'dark');
+  el('themeToggleBtn').textContent = theme === 'dark' ? '☀️ Светлая тема' : '🌙 Тёмная тема';
+}
+
+let savedTheme = 'light';
+try { savedTheme = localStorage.getItem('subtest-theme') || 'light'; } catch (e) {}
+applyTheme(savedTheme);
+
+el('themeToggleBtn').addEventListener('click', () => {
+  const next = document.body.classList.contains('dark-theme') ? 'light' : 'dark';
+  applyTheme(next);
+  try { localStorage.setItem('subtest-theme', next); } catch (e) {}
+});
+
+resetSample();
+loadCatalog();
+el('runBtn').addEventListener('click', run);
+el('resetBtn').addEventListener('click', resetSample);
+el('modelSearch').addEventListener('input', (e) => renderPicker(e.target.value));
+
+MODEL_INPUTS.forEach(cfg => {
+  el(cfg.inputId).addEventListener('input', () => {
+    lsSet(LS_MODEL_PREFIX + cfg.key, el(cfg.inputId).value);
+    if (cfg.key === 'translate') checkTranslateFileBtn();
+    else if (cfg.key === 'fix') checkFixBtn();
+    else refreshModelHint(cfg);
+  });
+});
+
+el('refreshPricesBtn').addEventListener('click', () => refreshCatalogPrices(false));
+
+setInterval(() => { if (!document.hidden) refreshCatalogPrices(true); }, PRICE_REFRESH_MS);
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden && (!lastPriceUpdate || Date.now() - lastPriceUpdate.getTime() > PRICE_REFRESH_MS)) {
+    refreshCatalogPrices(true);
+  }
+});
+
+el('lines').addEventListener('paste', (e) => {
+  const pasted = (e.clipboardData || window.clipboardData).getData('text');
+  if (looksLikeSubtitleFile(pasted)) {
+    e.preventDefault();
+    const cleaned = cleanSubtitleText(pasted);
+    el('lines').value = cleaned.length ? cleaned.join('\n') : pasted;
+    const status = el('status');
+    status.className = 'status';
+    status.textContent = `Тайминги убраны, осталось ${cleaned.length} реплик.`;
+  }
+});
+
+el('cleanBtn').addEventListener('click', () => {
+  const current = el('lines').value;
+  const cleaned = cleanSubtitleText(current);
+  const status = el('status');
+  if (cleaned.length) {
+    el('lines').value = cleaned.join('\n');
+    status.className = 'status';
+    status.textContent = `Тайминги убраны, осталось ${cleaned.length} реплик.`;
+  } else {
+    status.className = 'status err';
+    status.textContent = 'Не нашёл таймингов/номеров для очистки — похоже, текст уже чистый.';
+  }
+});
+
+el('swapLangBtn').addEventListener('click', () => {
+  const src = el('srcLang');
+  const tgt = el('tgtLang');
+  const tmp = src.value;
+  src.value = tgt.value;
+  tgt.value = tmp;
+});
+
+document.querySelectorAll('input[name="mode"]').forEach(r => r.addEventListener('change', onModeChange));
+el('selectFolderBtn').addEventListener('click', selectSeriesFolder);
+el('addCharBtn').addEventListener('click', () => {
+  seriesContext.characters.push({ name: '', gender: 'женский', note: '' });
+  renderCharTable();
+});
+el('addGlossBtn').addEventListener('click', () => {
+  seriesContext.glossary.push({ term: '', translation: '', note: '' });
+  renderGlossTable();
+});
+el('saveContextBtn').addEventListener('click', () => saveSeriesContext(true));
+
+el('bulkAddBtn').addEventListener('click', () => {
+  const status = el('contextStatus');
+  if (!seriesContext) return;
+  const raw = el('bulkNames').value;
+  const names = raw.split(/[,\n]/).map(s => s.trim()).filter(Boolean);
+  let added = 0;
+  names.forEach(name => {
+    const exists = seriesContext.characters.some(c => c.name.toLowerCase() === name.toLowerCase());
+    if (!exists) {
+      seriesContext.characters.push({ name, gender: 'женский', note: '' });
+      added++;
+    }
+  });
+  renderCharTable();
+  el('bulkNames').value = '';
+  status.className = 'status';
+  status.textContent = added
+    ? `Добавлено ${added}. Проверь пол у каждого (по умолчанию стоит «женский») и нажми «Сохранить контекст».`
+    : 'Ничего не добавлено — все имена уже есть в списке.';
+});
+
+function getAiFillModel(){
+  return resolveModel(el('aiFillModel').value);
+}
+
+el('aiStyleBtn').addEventListener('click', async () => {
+  const status = el('aiStyleStatus');
+  const apiKey = el('apiKey').value.trim();
+  const seriesTitle = el('seriesName').value.trim();
+  const model = getAiFillModel();
+
+  status.className = 'status';
+  if (!apiKey) { status.className = 'status err'; status.textContent = 'Вставь ключ OpenRouter.'; return; }
+  if (!seriesTitle) { status.className = 'status err'; status.textContent = 'Сначала впиши название сериала.'; return; }
+  if (!model) { status.className = 'status err'; status.textContent = 'Выбери модель для автозаполнения.'; return; }
+
+  status.textContent = 'Запрашиваю у модели...';
+  const prompt = `In 2-4 sentences, describe the overall tone, genre and dialogue style of the TV series "${seriesTitle}", specifically for someone translating its subtitles: overall genre/mood, formality of the dialogue, presence of humor/sarcasm/slang, and any distinctive speech patterns. If you are not confident you actually know this specific series, say so explicitly in Russian instead of guessing or inventing details. Answer in Russian, plain text only, no markdown, no preamble.`;
+
+  try {
+    const useWebSearch = el('aiWebSearch').checked;
+    const result = await askModel(model, apiKey, prompt, useWebSearch);
+    const current = el('styleNotes').value.trim();
+    el('styleNotes').value = current ? `${current}\n\n${result}` : result;
+    status.className = 'status';
+    status.textContent = 'Готово — проверь текст и не забудь нажать «Сохранить контекст».';
+  } catch (e) {
+    status.className = 'status err';
+    status.textContent = `Ошибка: ${e.message}`;
+  }
+});
+
+el('aiCharsBtn').addEventListener('click', async () => {
+  const status = el('aiCharsStatus');
+  const apiKey = el('apiKey').value.trim();
+  const seriesTitle = el('seriesName').value.trim();
+  const model = getAiFillModel();
+
+  status.className = 'status';
+  if (!apiKey) { status.className = 'status err'; status.textContent = 'Вставь ключ OpenRouter.'; return; }
+  if (!seriesTitle) { status.className = 'status err'; status.textContent = 'Сначала впиши название сериала.'; return; }
+  if (!model) { status.className = 'status err'; status.textContent = 'Выбери модель для автозаполнения.'; return; }
+
+  status.textContent = 'Запрашиваю у модели...';
+  const template = el('aiCharsPrompt').value.trim() || DEFAULT_AI_CHARS_PROMPT;
+  const season = el('aiCharsSeason').value.trim();
+  const seasonClause = season ? `, season ${season}` : '';
+  const prompt = template.replace(/\{series\}/g, seriesTitle).replace(/\{season\}/g, seasonClause);
+
+  try {
+    const useWebSearch = el('aiWebSearch').checked;
+    const result = await askModel(model, apiKey, prompt, useWebSearch);
+    const isUnsure = /^примерно\s*:/i.test(result.trim());
+    const namesOnly = result.trim().replace(/^примерно\s*:\s*/i, '');
+    const current = el('bulkNames').value.trim();
+    el('bulkNames').value = current ? `${current}, ${namesOnly}` : namesOnly;
+    status.className = isUnsure ? 'status err' : 'status';
+    status.textContent = isUnsure
+      ? 'Модель не до конца уверена в этом списке (пометила его как примерный) — список всё равно подставлен, обязательно перепроверь имена перед добавлением.'
+      : 'Список подставлен в поле выше — проверь имена и нажми «Добавить всех».';
+  } catch (e) {
+    status.className = 'status err';
+    status.textContent = `Ошибка: ${e.message}`;
+  }
+});
+
+el('fullFilePrompt').value = DEFAULT_FULL_FILE_PROMPT;
+el('aiCharsPrompt').value = DEFAULT_AI_CHARS_PROMPT;
+
+let currentFingerprint = null;
+
+el('srtFileInput').addEventListener('change', async (e) => {
+  const file = e.target.files[0];
+  const info = el('fileInfo');
+  const resumeInfo = el('resumeInfo');
+  const clearBtn = el('clearProgressBtn');
+  if (!file) return;
+
+  uploadedFileBaseName = file.name.replace(/\.(srt|vtt)$/i, '');
+  resumeInfo.style.display = 'none';
+  clearBtn.style.display = 'none';
+  el('srtTableWrap').style.display = 'none';
+  el('costSummary').style.display = 'none';
+
+  try {
+    const text = await file.text();
+    uploadedSrtCues = parseSrtFile(text);
+    if (uploadedSrtCues.length === 0) {
+      info.style.color = 'var(--err)';
+      info.textContent = 'Не нашёл реплик с таймингами в этом файле — проверь формат.';
+      currentFingerprint = null;
+    } else {
+      info.style.color = 'var(--accent)';
+      info.textContent = `${file.name} — ${uploadedSrtCues.length} реплик распознано.`;
+      currentFingerprint = fileFingerprint(uploadedSrtCues, file.name);
+
+      const progress = loadProgress(currentFingerprint);
+      if (progress && progress.lines) {
+        const doneCount = progress.lines.filter(l => l && l.length > 0).length;
+        if (doneCount > 0) {
+          renderSrtTable(uploadedSrtCues, progress.lines);
+          if (doneCount < uploadedSrtCues.length) {
+            resumeInfo.style.display = 'block';
+            resumeInfo.textContent = `Найден незавершённый перевод этого файла: готово ${doneCount} из ${uploadedSrtCues.length}. При запуске продолжу с этого места.`;
+          } else {
+            resumeInfo.style.display = 'block';
+            resumeInfo.textContent = `Этот файл уже переведён полностью (сохранённый черновик), но не был сохранён на диск. Можно отредактировать таблицу ниже и сразу нажать «Сохранить .srt», либо запустить заново.`;
+          }
+          clearBtn.style.display = 'inline-block';
+        }
+      } else {
+        renderSrtTable(uploadedSrtCues, new Array(uploadedSrtCues.length).fill(''));
+      }
+    }
+  } catch (err) {
+    uploadedSrtCues = null;
+    currentFingerprint = null;
+    info.style.color = 'var(--err)';
+    info.textContent = `Не удалось прочитать файл: ${err.message}`;
+  }
+  checkTranslateFileBtn();
+});
+
+
+el('clearProgressBtn').addEventListener('click', () => {
+  if (currentFingerprint) clearProgress(currentFingerprint);
+  el('resumeInfo').style.display = 'none';
+  el('clearProgressBtn').style.display = 'none';
+  if (uploadedSrtCues) renderSrtTable(uploadedSrtCues, new Array(uploadedSrtCues.length).fill(''));
+});
+
+async function translateFileMain(){
+  const apiKey = el('apiKey').value.trim();
+  const src = el('srcLang').value.trim() || 'English';
+  const tgt = el('tgtLang').value.trim() || 'Russian';
+  const batchSize = Math.max(5, parseInt(el('batchSize').value) || 50);
+  const tailSize = Math.max(0, parseInt(el('tailSize').value) || 10);
+  const pauseMs = Math.max(0, parseInt(el('pauseMs').value) || 1200);
+  const basePrompt = el('fullFilePrompt').value.trim() || DEFAULT_FULL_FILE_PROMPT;
+  const model = resolveModel(el('fullFileModel').value);
+  const status = el('fileStatus');
+  const btn = el('translateFileBtn');
+  const stopBtn = el('stopFileBtn');
+  const progressWrap = el('progressWrap');
+  const progressBar = el('progressBar');
+  const progressLabel = el('progressLabel');
+  const mode = currentMode();
+
+  status.className = 'status';
+  if (!apiKey) { status.textContent = 'Вставь ключ OpenRouter.'; status.className = 'status err'; return; }
+  if (!model) { status.textContent = 'Выбери модель для перевода файла.'; status.className = 'status err'; return; }
+  if (!uploadedSrtCues || !uploadedSrtCues.length) { status.textContent = 'Сначала загрузи .srt файл.'; status.className = 'status err'; return; }
+
+  const contextSection = (mode === 'series' && seriesContext) ? buildContextPromptSection(tgt) : '';
+  const existing = loadProgress(currentFingerprint);
+  const existingLines = (existing && existing.lines) ? existing.lines : new Array(uploadedSrtCues.length).fill('');
+
+  btn.disabled = true;
+  stopRequested = false;
+  status.textContent = 'Проверяю актуальные цены…';
+  await refreshCatalogPrices(true);
+  stopBtn.style.display = 'inline-block';
+  stopBtn.disabled = false;
+  stopBtn.textContent = 'Остановить';
+  el('resumeInfo').style.display = 'none';
+  progressWrap.style.display = 'block';
+  const startDone = existingLines.filter(l => l && l.length > 0).length;
+  progressBar.style.width = `${Math.round((startDone / uploadedSrtCues.length) * 100)}%`;
+  progressLabel.textContent = `${startDone} / ${uploadedSrtCues.length}`;
+  status.textContent = startDone > 0 ? 'Продолжаю перевод с сохранённого места...' : 'Перевожу файл пачками...';
+
+  const startTime = Date.now();
+
+  const { finalLines, usageIn, usageOut, stoppedAt, errorMsg, cancelled } = await translateFullFile(
+    uploadedSrtCues, model, src, tgt, apiKey, basePrompt, contextSection, batchSize, tailSize, pauseMs,
+    existingLines, currentFingerprint, uploadedFileBaseName,
+    (lines, batchError) => {
+      const doneCount = lines.filter(l => l && l.length > 0).length;
+      progressBar.style.width = `${Math.round((doneCount / uploadedSrtCues.length) * 100)}%`;
+      progressLabel.textContent = `${doneCount} / ${uploadedSrtCues.length}`;
+      lines.forEach((val, i) => { if (val) updateSrtTableCell(i, val); });
+    },
+    () => stopRequested
+  );
+
+  const durationMs = Date.now() - startTime;
+  await renderCostSummary(model, usageIn, usageOut, durationMs, !!(stoppedAt !== null));
+
+  stopBtn.style.display = 'none';
+
+  if (cancelled) {
+    const doneCount = finalLines.filter(l => l && l.length > 0).length;
+    status.className = 'status';
+    status.textContent = `Остановлено вручную: готово ${doneCount} из ${uploadedSrtCues.length}. Уже переведённое сохранено — загрузи тот же файл снова (или просто нажми «Перевести файл» ещё раз, если файл всё ещё выбран), чтобы продолжить с этого места.`;
+    el('clearProgressBtn').style.display = 'inline-block';
+  } else if (stoppedAt !== null) {
+    status.className = 'status err';
+    status.textContent = `Остановлено на реплике ${stoppedAt + 1} из ${uploadedSrtCues.length}: ${errorMsg}. Прогресс сохранён — загрузи тот же файл ещё раз и нажми «Перевести файл», чтобы продолжить с этого места.`;
+    el('clearProgressBtn').style.display = 'inline-block';
+  } else {
+    status.className = 'status';
+    status.textContent = `Перевод завершён. Проверь таблицу ниже, при необходимости отредактируй, и нажми «Сохранить .srt».`;
+  }
+
+  btn.disabled = false;
+}
+
+async function translateFileClick(){
+  if (translateRunning) return;
+  translateRunning = true;
+  checkTranslateFileBtn();
+  try { await translateFileMain(); }
+  finally {
+    translateRunning = false;
+    el('stopFileBtn').style.display = 'none';
+    checkTranslateFileBtn();
+  }
+}
+
+el('translateFileBtn').addEventListener('click', translateFileClick);
+
+el('stopFileBtn').addEventListener('click', () => {
+  stopRequested = true;
+  const stopBtn = el('stopFileBtn');
+  stopBtn.disabled = true;
+  stopBtn.textContent = 'Останавливаю...';
+  el('fileStatus').className = 'status';
+  el('fileStatus').textContent = 'Останавливаю после завершения текущей пачки — уже переведённое сохранится...';
+});
+
+el('saveSrtBtn').addEventListener('click', async () => {
+  const status = el('fileStatus');
+  if (!uploadedSrtCues || !uploadedSrtCues.length) return;
+  const tgt = el('tgtLang').value.trim() || 'Russian';
+  const values = readSrtTableValues(uploadedSrtCues.length);
+  const srtText = buildSrtOutput(uploadedSrtCues, values);
+  const filename = `${uploadedFileBaseName}.${tgt.toLowerCase().slice(0,2)}.srt`;
+  const result = await saveOrDownloadSrt(filename, srtText);
+
+  status.className = 'status';
+  status.textContent = `Сохранено: ${filename} → ${result.savedTo}.`;
+
+  if (currentFingerprint) clearProgress(currentFingerprint);
+  el('resumeInfo').style.display = 'none';
+  el('clearProgressBtn').style.display = 'none';
+
+  const mode = currentMode();
+  if (mode === 'series' && dirHandle && seriesContext) {
+    seriesContext.history.push({
+      date: new Date().toISOString(),
+      lines: uploadedSrtCues.length,
+      models: [el('fullFileModel').value],
+      file: filename,
+    });
+    await saveSeriesContext(false);
+  }
+});
+
+el('fixFileInput').addEventListener('change', async (e) => {
+  const file = e.target.files[0];
+  const info = el('fixFileInfo');
+  if (!file) return;
+  fixFileBaseName = file.name.replace(/\.(srt|vtt)$/i, '').replace(/\.[a-z]{2}$/i, '');
+  el('fixTableWrap').style.display = 'none';
+
+  try {
+    const text = await file.text();
+    fixCues = parseSrtFile(text);
+    if (fixCues.length === 0) {
+      info.style.color = 'var(--err)';
+      info.textContent = 'Не нашёл реплик с таймингами в этом файле — проверь формат.';
+    } else {
+      const tgt = el('tgtLang').value.trim() || 'Russian';
+      const tester = getScriptTester(tgt);
+      const flaggedCount = tester ? fixCues.filter(c => looksUntranslated(c.textLines.join(' '), tester)).length : 0;
+      info.style.color = 'var(--accent-ink)';
+      info.textContent = tester
+        ? `${file.name} — ${fixCues.length} реплик, похоже непереведённых: ${flaggedCount}.`
+        : `${file.name} — ${fixCues.length} реплик. Автоопределение недоступно для этой пары языков — отметь строки вручную.`;
+      renderFixTable(fixCues);
+    }
+  } catch (err) {
+    fixCues = null;
+    info.style.color = 'var(--err)';
+    info.textContent = `Не удалось прочитать файл: ${err.message}`;
+  }
+  checkFixBtn();
+});
+
+el('fixTranslateBtn').addEventListener('click', translateFixSelected);
+
+el('saveFixBtn').addEventListener('click', async () => {
+  const status = el('fixStatus');
+  if (!fixCues || !fixCues.length) return;
+  const tgt = el('tgtLang').value.trim() || 'Russian';
+  const values = readCellValues('fixTrans', fixCues.length);
+  const srtText = buildSrtOutput(fixCues, values);
+  const filename = `${fixFileBaseName}.fixed.${tgt.toLowerCase().slice(0,2)}.srt`;
+  const result = await saveOrDownloadSrt(filename, srtText);
+  status.className = 'status';
+  status.textContent = `Сохранено: ${filename} → ${result.savedTo}.`;
+});
+</script>
+</body>
+</html>
