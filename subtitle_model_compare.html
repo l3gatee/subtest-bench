@@ -363,6 +363,7 @@
       <div class="picker-results" id="pickerResults"></div>
     </div>
     <datalist id="modelDatalist"></datalist>
+    <datalist id="modelDatalistTranslate"></datalist>
     <div class="warn" id="manyWarn" style="display:none;">Много моделей одновременно — каждая новая добавляет ещё один параллельный запрос и свой расход по ключу. Работает, но проверь, что готов оплатить все сразу.</div>
   </div>
 
@@ -440,8 +441,9 @@
       </div>
       <div>
         <label>Модель для перевода</label>
-        <input type="text" id="fullFileModel" list="modelDatalist" placeholder="любая модель из каталога OpenRouter…" autocomplete="off">
+        <input type="text" id="fullFileModel" list="modelDatalistTranslate" placeholder="любая модель из каталога OpenRouter…" autocomplete="off">
         <div class="hint" id="fullFileModelPrice"></div>
+        <div class="warn" id="batchNote" style="display:none;">Пакетный режим (модель с «:batch»): все пачки уходят разом и обрабатываются асинхронно, обычно за минуты, максимум за 24 часа, зато примерно вдвое дешевле. Вкладку можно закрыть: номер пакета сохраняется, а результат забирается повторным нажатием «Перевести файл» с тем же файлом. Минус: пачки не видят готового перевода соседних, контекст между ними идёт только из оригинала.</div>
       </div>
     </div>
 
@@ -581,12 +583,18 @@ const MODEL_INPUTS = [
   { inputId: 'aiFillModel', hintId: 'aiFillModelPrice', key: 'aifill' },
 ];
 
+const BATCH_CATALOG = new Map();   // ":batch" variants: usable only through the Batch API
 let lastPriceUpdate = null;
 let priceRefreshInFlight = null;
 let selectionInitialized = false;
 
 function lsGet(key){ try { return localStorage.getItem(key); } catch (e) { return null; } }
 function lsSet(key, val){ try { localStorage.setItem(key, val); } catch (e) {} }
+
+// ":batch" variants belong to OpenRouter's async batch API and fail on chat/completions
+function isChatUsableId(id){
+  return !/:batch$/i.test(id || '');
+}
 
 function parseCatalogEntry(m){
   return {
@@ -615,11 +623,28 @@ function resolveModel(value){
       || null;
 }
 
+function resolveTranslateModel(value){
+  const v = (value || '').trim();
+  if (!v) return null;
+  if (!isChatUsableId(v)) {
+    const lower = v.toLowerCase();
+    for (const m of BATCH_CATALOG.values()) {
+      if (m.id.toLowerCase() === lower) return { model: m, batch: true };
+    }
+    return null;
+  }
+  const m = resolveModel(v);
+  return m ? { model: m, batch: false } : null;
+}
+
 function relevantModelIds(){
   const ids = new Set(SELECTED.map(m => m.id));
   MODEL_INPUTS.forEach(cfg => {
     const input = el(cfg.inputId);
-    const m = input ? resolveModel(input.value) : null;
+    if (!input) return;
+    const m = cfg.key === 'translate'
+      ? (resolveTranslateModel(input.value) || {}).model
+      : resolveModel(input.value);
     if (m) ids.add(m.id);
   });
   return ids;
@@ -633,17 +658,20 @@ function mergeCatalog(rawList){
   let added = false;
 
   rawList.forEach(raw => {
+    const isBatch = !isChatUsableId(raw.id);
     const fresh = parseCatalogEntry(raw);
-    const old = byId.get(fresh.id);
+    fresh.isBatch = isBatch;
+    if (isBatch) fresh.baseId = fresh.id.replace(/:batch$/i, '');
+    const old = isBatch ? BATCH_CATALOG.get(fresh.id) : byId.get(fresh.id);
     if (!old) {
-      CATALOG.push(fresh);
-      byId.set(fresh.id, fresh);
+      if (isBatch) BATCH_CATALOG.set(fresh.id, fresh);
+      else { CATALOG.push(fresh); byId.set(fresh.id, fresh); }
       added = true;
       return;
     }
     const priceChanged = Math.abs(old.inCost - fresh.inCost) > 1e-9 || Math.abs(old.outCost - fresh.outCost) > 1e-9;
     if (priceChanged && relevant.has(old.id)) {
-      changes.push({ name: old.name, oldIn: old.inCost, oldOut: old.outCost, newIn: fresh.inCost, newOut: fresh.outCost });
+      changes.push({ name: old.name + (isBatch ? ' (пакетный)' : ''), oldIn: old.inCost, oldOut: old.outCost, newIn: fresh.inCost, newOut: fresh.outCost });
     }
     old.name = fresh.name;
     old.inCost = fresh.inCost;
@@ -656,9 +684,15 @@ function mergeCatalog(rawList){
 }
 
 function rebuildModelDatalist(){
-  el('modelDatalist').innerHTML = CATALOG
+  const chatOptions = CATALOG
     .map(m => `<option value="${escapeAttr(m.id)}">${escapeHtml(m.name)}</option>`)
     .join('');
+  const batchOptions = [...BATCH_CATALOG.values()]
+    .sort((a, b) => a.name.localeCompare(b.name))
+    .map(m => `<option value="${escapeAttr(m.id)}">${escapeHtml(m.name)} — пакетный, дешевле</option>`)
+    .join('');
+  el('modelDatalist').innerHTML = chatOptions;
+  el('modelDatalistTranslate').innerHTML = chatOptions + batchOptions;
 }
 
 function estimateCostUsd(model, lines){
@@ -671,21 +705,45 @@ function refreshModelHint(cfg){
   const hint = el(cfg.hintId);
   if (!input || !hint) return;
   const raw = input.value.trim();
+  const isTranslate = cfg.key === 'translate';
+  const note = isTranslate ? el('batchNote') : null;
+  if (note) note.style.display = 'none';
 
   if (!raw) {
     hint.className = 'hint';
     hint.textContent = 'Начни вводить название — подсказки берутся из каталога OpenRouter.';
     return;
   }
-  const m = resolveModel(raw);
-  if (!m) {
+  if (!isTranslate && !isChatUsableId(raw)) {
+    const base = raw.replace(/:batch$/i, '');
+    const baseModel = resolveModel(base);
     hint.className = 'warn';
-    hint.textContent = CATALOG.length ? 'Такой модели нет в каталоге — выбери вариант из подсказок.' : 'Каталог ещё загружается…';
+    hint.textContent = baseModel
+      ? `Версия «:batch» работает только через пакетный API. Здесь нужен обычный запрос, возьми: ${baseModel.id}. Пакетный режим доступен в блоке «Перевод всего эпизода».`
+      : 'Версия «:batch» работает только через пакетный API, а здесь нужен обычный запрос. Убери «:batch» из названия. Пакетный режим доступен в блоке «Перевод всего эпизода».';
     return;
   }
 
-  let text = `${m.name} · ${fmtPrice(m.inCost, m.outCost)}`;
-  if (cfg.key === 'translate') {
+  let resolved;
+  if (isTranslate) {
+    resolved = resolveTranslateModel(raw);
+  } else {
+    const mm = resolveModel(raw);
+    resolved = mm ? { model: mm, batch: false } : null;
+  }
+  if (!resolved) {
+    hint.className = 'warn';
+    hint.textContent = !CATALOG.length
+      ? 'Каталог ещё загружается…'
+      : (!isChatUsableId(raw)
+          ? 'У этой модели нет пакетной версии в каталоге — убери «:batch» или выбери другую.'
+          : 'Такой модели нет в каталоге — выбери вариант из подсказок.');
+    return;
+  }
+
+  const m = resolved.model;
+  let text = `${m.name}${resolved.batch ? ' (пакетный режим)' : ''} · ${fmtPrice(m.inCost, m.outCost)}`;
+  if (isTranslate) {
     const lines = (uploadedSrtCues && uploadedSrtCues.length) ? uploadedSrtCues.length : (parseInt(el('epSize').value) || 0);
     if (lines) {
       const usd = estimateCostUsd(m, lines);
@@ -695,6 +753,7 @@ function refreshModelHint(cfg){
   }
   hint.className = 'hint';
   hint.textContent = text;
+  if (note && resolved.batch) note.style.display = 'block';
 }
 
 function refreshAllModelHints(){
@@ -732,7 +791,7 @@ function initSelection(){
   MODEL_INPUTS.forEach(cfg => {
     const input = el(cfg.inputId);
     const savedVal = lsGet(LS_MODEL_PREFIX + cfg.key);
-    if (savedVal) input.value = savedVal;
+    if (savedVal) input.value = cfg.key === 'translate' ? savedVal : savedVal.replace(/:batch$/i, '');
     if (!input.value.trim() && SELECTED.length) input.value = SELECTED[0].id;
   });
 }
@@ -1231,6 +1290,7 @@ function saveProgress(fp, data){
 
 function clearProgress(fp){
   try { localStorage.removeItem('subtest-progress:' + fp); } catch (e) {}
+  try { localStorage.removeItem('subtest-batchjob:' + fp); } catch (e) {}
 }
 
 async function translateBatchForFullFile(model, texts, src, tgt, apiKey, basePrompt, contextSection, tailPairs){
@@ -1427,9 +1487,238 @@ async function saveOrDownloadSrt(filename, text){
   return { savedTo: 'загрузки браузера' };
 }
 
+
+/* ---------- OpenRouter Batch API (":batch" models) ---------- */
+
+const BATCH_POLL = { start: 4000, max: 20000, factor: 1.5 };
+const BATCH_TERMINAL = ['completed', 'failed', 'expired', 'cancelled'];
+
+function batchJobKey(fp){ return 'subtest-batchjob:' + fp; }
+function loadBatchJob(fp){
+  try { const raw = localStorage.getItem(batchJobKey(fp)); return raw ? JSON.parse(raw) : null; } catch (e) { return null; }
+}
+function saveBatchJob(fp, job){ try { localStorage.setItem(batchJobKey(fp), JSON.stringify(job)); } catch (e) {} }
+function clearBatchJob(fp){ try { localStorage.removeItem(batchJobKey(fp)); } catch (e) {} }
+
+function parseTranslatedContent(content){
+  try {
+    const cleaned = String(content).replace(/```json|```/g, '').trim();
+    const parsed = JSON.parse(cleaned);
+    if (Array.isArray(parsed)) return parsed.map(x => (typeof x === 'string' ? x : String(x)));
+  } catch (e) {}
+  return String(content).split('\n').filter(x => x.trim()).map(x => x.replace(/^\d+\.\s*/, ''));
+}
+
+// Requests in a batch cannot see each other's output, so the lines before a group
+// are passed in the original language: only for tone and for who is speaking.
+function buildBatchSystemPrompt(basePrompt, src, tgt, contextSection, prevSourceLines){
+  let system = basePrompt.replace('{0}', src).replace('{1}', tgt);
+  if (contextSection) {
+    system += `\n\nSeries context — use this to keep terminology, names and characters consistent:\n${contextSection}`;
+  }
+  if (prevSourceLines && prevSourceLines.length) {
+    system += `\n\nThe following original-language lines come immediately before this batch. They are given only as context for tone and for who is speaking — do not translate them and do not include them in the output:\n` +
+      prevSourceLines.map(l => `"${l}"`).join('\n');
+  }
+  return system;
+}
+
+async function errorText(resp){
+  const t = await resp.text().catch(() => resp.statusText);
+  return `${resp.status}: ${String(t).slice(0, 200)}`;
+}
+
+// The docs show the base slug as the batch model; if the API refuses it, retry once with the ":batch" slug.
+async function submitBatchJob(entry, requests, apiKey){
+  const baseId = entry.baseId || entry.id.replace(/:batch$/i, '');
+  const send = (slug) => fetch('https://openrouter.ai/api/v1/batches', {
+    method: 'POST',
+    headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+    // key order matters: endpoint and model must come before requests
+    body: JSON.stringify({ endpoint: '/v1/chat/completions', model: slug, requests }),
+  });
+
+  let resp = await send(baseId);
+  if (!resp.ok && [400, 404, 422].includes(resp.status)) {
+    const first = await errorText(resp);
+    resp = await send(entry.id);
+    if (!resp.ok) {
+      const second = await errorText(resp);
+      throw new Error(`пакет не принят. С обычным названием: ${first}. С «:batch»: ${second}`);
+    }
+  } else if (!resp.ok) {
+    throw new Error(await errorText(resp));
+  }
+  return await resp.json();
+}
+
+async function pollBatchJob(batchId, apiKey, onTick){
+  let delay = BATCH_POLL.start;
+  let failures = 0;
+  for (;;) {
+    if (stopRequested) return { stopped: true };
+    try {
+      const resp = await fetch(`https://openrouter.ai/api/v1/batches/${encodeURIComponent(batchId)}`, {
+        headers: { 'Authorization': `Bearer ${apiKey}` },
+        cache: 'no-store',
+      });
+      if (!resp.ok) throw new Error(await errorText(resp));
+      const batch = await resp.json();
+      failures = 0;
+      onTick(batch);
+      if (BATCH_TERMINAL.includes(batch.status)) return { batch };
+    } catch (e) {
+      failures++;
+      if (failures >= 5) throw e;
+    }
+    const until = Date.now() + delay;
+    while (Date.now() < until) {
+      if (stopRequested) return { stopped: true };
+      await new Promise(r => setTimeout(r, Math.min(250, Math.max(0, until - Date.now()))));
+    }
+    delay = Math.min(Math.round(delay * BATCH_POLL.factor), BATCH_POLL.max);
+  }
+}
+
+function applyBatchResults(batch, job, cues, finalLines){
+  const stats = { applied: 0, failedGroups: 0, mismatchGroups: 0, missingLines: 0 };
+  (batch.results || []).forEach(r => {
+    const gi = parseInt(String(r.custom_id).replace(/^g/, ''), 10);
+    const idxs = job.groups[gi];
+    if (!idxs) return;
+    const body = r.response && r.response.body;
+    const ok = r.response && r.response.status_code === 200 && body && body.choices && body.choices[0];
+    if (!ok) return;
+    const translated = parseTranslatedContent((body.choices[0].message && body.choices[0].message.content) || '');
+    if (translated.length !== idxs.length) stats.mismatchGroups++;
+    idxs.forEach((cueIdx, j) => {
+      const meta = extractMeta(cues[cueIdx].textLines);
+      const t = translated[j];
+      if (t === undefined || t === '') {
+        stats.missingLines++;
+        finalLines[cueIdx] = formatTranslatedCue(meta, meta.plainText);
+      } else {
+        finalLines[cueIdx] = formatTranslatedCue(meta, t);
+      }
+    });
+    stats.applied++;
+  });
+  stats.failedGroups = job.groups.length - stats.applied;
+  return stats;
+}
+
+async function runBatchTranslation(entry, p){
+  const { cues, src, tgt, apiKey, basePrompt, contextSection, batchSize, tailSize, pauseMs, existingLines, status, progressBar, progressLabel } = p;
+  const fp = currentFingerprint;
+  const finalLines = existingLines.slice();
+  let job = loadBatchJob(fp);
+
+  if (!job) {
+    const groups = buildBatches(cues, batchSize, pauseMs)
+      .filter(idxs => !idxs.every(i => finalLines[i] && finalLines[i].length > 0));
+    if (!groups.length) return { noop: true };
+
+    const requests = groups.map((idxs, gi) => {
+      const texts = idxs.map(i => extractMeta(cues[i].textLines).plainText);
+      const prevSource = [];
+      for (let k = Math.max(0, idxs[0] - tailSize); k < idxs[0]; k++) prevSource.push(extractMeta(cues[k].textLines).plainText);
+      return {
+        custom_id: `g${gi}`,
+        body: {
+          messages: [
+            { role: 'system', content: buildBatchSystemPrompt(basePrompt, src, tgt, contextSection, prevSource) },
+            { role: 'user', content: texts.map((l, i) => `${i + 1}. ${l}`).join('\n') },
+          ],
+          temperature: 0.3,
+          max_tokens: computeMaxTokens(entry, texts.length),
+        },
+      };
+    });
+
+    const lineCount = groups.reduce((n, g) => n + g.length, 0);
+    status.textContent = `Отправляю пакет: ${requests.length} пачек, ${lineCount} реплик…`;
+    const submitted = await submitBatchJob(entry, requests, apiKey);
+    job = { batchId: submitted.id, modelId: entry.id, groups, submittedAt: Date.now(), total: requests.length };
+    saveBatchJob(fp, job);
+  } else {
+    status.textContent = `Нашёл ранее отправленный пакет ${job.batchId}, проверяю статус…`;
+  }
+
+  const polled = await pollBatchJob(job.batchId, apiKey, (b) => {
+    const rc = b.request_counts || {};
+    const total = rc.total || job.total;
+    const done = (rc.completed || 0) + (rc.failed || 0);
+    progressBar.style.width = `${total ? Math.round((done / total) * 100) : 0}%`;
+    progressLabel.textContent = `пакет ${b.status}: ${done} / ${total} пачек`;
+    status.className = 'status';
+    status.textContent = `Пакет ${job.batchId}: ${b.status}. Вкладку можно закрыть: результат заберётся при повторном запуске с тем же файлом.`;
+  });
+
+  if (polled.stopped) return { stopped: true, job };
+
+  const batch = polled.batch;
+  if (batch.status !== 'completed') {
+    clearBatchJob(fp);
+    return { failedStatus: batch.status, error: batch.error, job };
+  }
+
+  const stats = applyBatchResults(batch, job, cues, finalLines);
+  finalLines.forEach((v, i) => { if (v) updateSrtTableCell(i, v); });
+  saveProgress(fp, { filename: uploadedFileBaseName, total: cues.length, lines: finalLines, timestamp: Date.now() });
+  clearBatchJob(fp);
+  return { completed: true, batch, stats, job };
+}
+
+async function handleBatchRun(entry, p){
+  const { status } = p;
+  let result;
+  try {
+    result = await runBatchTranslation(entry, p);
+  } catch (e) {
+    status.className = 'status err';
+    const net = e instanceof TypeError ? ' Браузер не смог связаться с пакетным API: возможна блокировка CORS или обрыв сети.' : '';
+    status.textContent = `Ошибка пакетного режима: ${e.message}.${net} Если пакет уже успел отправиться, он сохранён: нажми «Перевести файл» ещё раз, и я проверю его статус.`;
+    el('clearProgressBtn').style.display = 'inline-block';
+    return;
+  }
+
+  if (result.noop) {
+    status.className = 'status';
+    status.textContent = 'Все реплики уже переведены, отправлять нечего.';
+    return;
+  }
+  if (result.stopped) {
+    status.className = 'status';
+    status.textContent = `Опрос остановлен. Пакет ${result.job.batchId} продолжает выполняться у OpenRouter и сохранён: нажми «Перевести файл», чтобы проверить его и забрать результат.`;
+    el('clearProgressBtn').style.display = 'inline-block';
+    return;
+  }
+  if (result.failedStatus) {
+    const err = result.error ? (typeof result.error === 'string' ? result.error : (result.error.message || JSON.stringify(result.error))) : '';
+    status.className = 'status err';
+    status.textContent = `Пакет ${result.job.batchId} завершился со статусом «${result.failedStatus}»${err ? ': ' + err : ''}. Запись о нём удалена, можно отправить заново.`;
+    return;
+  }
+
+  const u = result.batch.usage || {};
+  const costUsd = typeof u.cost === 'number'
+    ? u.cost
+    : ((u.prompt_tokens || 0) / 1e6) * entry.inCost + ((u.completion_tokens || 0) / 1e6) * entry.outCost;
+  await renderCostSummary(entry, u.prompt_tokens || 0, u.completion_tokens || 0, Date.now() - result.job.submittedAt, false,
+    { costUsd, label: 'Итого по пакетному переводу', timeLabel: 'С момента отправки пакета' });
+
+  const st = result.stats;
+  const warns = [];
+  if (st.failedGroups) warns.push(`${st.failedGroups} пачек не выполнены: их реплики остались на языке оригинала, повторный запуск отправит только их`);
+  if (st.mismatchGroups) warns.push(`в ${st.mismatchGroups} пачках число строк в ответе не совпало с отправленным, проверь таблицу на сдвиги`);
+  if (st.missingLines) warns.push(`${st.missingLines} строк модель пропустила, оставил оригинал (их можно дозаполнить блоком ниже)`);
+  status.className = warns.length ? 'status err' : 'status';
+  status.textContent = 'Пакетный перевод завершён.' + (warns.length ? ' Но: ' + warns.join('; ') + '.' : '') + ' Проверь таблицу и нажми «Сохранить .srt».';
+}
+
 function checkTranslateFileBtn(){
   const btn = el('translateFileBtn');
-  const hasModel = !!resolveModel(el('fullFileModel').value);
+  const hasModel = !!resolveTranslateModel(el('fullFileModel').value);
   btn.disabled = translateRunning || !(uploadedSrtCues && uploadedSrtCues.length && hasModel);
   refreshModelHint(MODEL_INPUTS[0]);
 }
@@ -1635,18 +1924,21 @@ function formatDuration(ms){
   return min > 0 ? `${min} мин ${sec} сек` : `${sec} сек`;
 }
 
-async function renderCostSummary(model, usageIn, usageOut, durationMs, stopped){
+async function renderCostSummary(model, usageIn, usageOut, durationMs, stopped, opts){
+  opts = opts || {};
   const box = el('costSummary');
-  const costUsd = (usageIn / 1e6) * model.inCost + (usageOut / 1e6) * model.outCost;
+  const costUsd = typeof opts.costUsd === 'number'
+    ? opts.costUsd
+    : (usageIn / 1e6) * model.inCost + (usageOut / 1e6) * model.outCost;
   const { rate, approx } = await fetchUsdRubRate();
   const costRub = costUsd * rate;
 
   box.style.display = 'block';
   box.innerHTML = `
-    <h3>${stopped ? 'Потрачено до остановки' : 'Итого по переводу'}</h3>
+    <h3>${opts.label || (stopped ? 'Потрачено до остановки' : 'Итого по переводу')}</h3>
     <div class="sum-line"><span>Токены (вход/выход)</span><b>${usageIn} / ${usageOut}</b></div>
     <div class="sum-line"><span>Стоимость</span><b>$${costUsd.toFixed(4)} ≈ ${costRub.toFixed(2)} ₽${approx ? ' (курс приблизительный)' : ''}</b></div>
-    <div class="sum-line"><span>Время перевода</span><b>${formatDuration(durationMs)}</b></div>
+    <div class="sum-line"><span>${opts.timeLabel || 'Время перевода'}</span><b>${formatDuration(durationMs)}</b></div>
   `;
 }
 
@@ -1988,6 +2280,13 @@ el('srtFileInput').addEventListener('change', async (e) => {
       } else {
         renderSrtTable(uploadedSrtCues, new Array(uploadedSrtCues.length).fill(''));
       }
+
+      const pendingJob = loadBatchJob(currentFingerprint);
+      if (pendingJob) {
+        resumeInfo.style.display = 'block';
+        resumeInfo.textContent = `Для этого файла уже отправлен пакет ${pendingJob.batchId} (${pendingJob.modelId}, ${new Date(pendingJob.submittedAt).toLocaleString('ru-RU')}). Нажми «Перевести файл»: проверю его статус и заберу результат, платить второй раз не придётся.`;
+        clearBtn.style.display = 'inline-block';
+      }
     }
   } catch (err) {
     uploadedSrtCues = null;
@@ -2014,7 +2313,8 @@ async function translateFileMain(){
   const tailSize = Math.max(0, parseInt(el('tailSize').value) || 10);
   const pauseMs = Math.max(0, parseInt(el('pauseMs').value) || 1200);
   const basePrompt = el('fullFilePrompt').value.trim() || DEFAULT_FULL_FILE_PROMPT;
-  const model = resolveModel(el('fullFileModel').value);
+  const resolved = resolveTranslateModel(el('fullFileModel').value);
+  const model = resolved ? resolved.model : null;
   const status = el('fileStatus');
   const btn = el('translateFileBtn');
   const stopBtn = el('stopFileBtn');
@@ -2045,6 +2345,16 @@ async function translateFileMain(){
   progressBar.style.width = `${Math.round((startDone / uploadedSrtCues.length) * 100)}%`;
   progressLabel.textContent = `${startDone} / ${uploadedSrtCues.length}`;
   status.textContent = startDone > 0 ? 'Продолжаю перевод с сохранённого места...' : 'Перевожу файл пачками...';
+
+  if (resolved.batch) {
+    await handleBatchRun(model, {
+      cues: uploadedSrtCues, src, tgt, apiKey, basePrompt, contextSection, batchSize, tailSize, pauseMs,
+      existingLines, status, progressBar, progressLabel,
+    });
+    stopBtn.style.display = 'none';
+    btn.disabled = false;
+    return;
+  }
 
   const startTime = Date.now();
 
